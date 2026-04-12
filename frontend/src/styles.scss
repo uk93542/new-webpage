@@ -1,0 +1,11 @@
+// Basic Sass styling on top of Bootstrap.
+$body-bg: #f5f7fb;
+$card-border-radius: 1rem;
+
+body {
+  background: $body-bg;
+}
+
+h1 {
+  font-weight: 700;
+}
