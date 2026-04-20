@@ -9,7 +9,7 @@ Beginner-friendly full-stack starter project for a **ride sharing system**.
 
 ## What this app does
 
-1. User creates a ride with:
+1. User creates a ride (for any date) with:
    - Name
    - Place option (`station` or `airport`)
    - Roll number
@@ -18,9 +18,9 @@ Beginner-friendly full-stack starter project for a **ride sharing system**.
 2. Users can view rides on the same date.
 3. Users can request to join a ride.
 4. Ride creator can confirm request.
-5. On confirmation:
-   - direct notification hook triggers for ride creator + requester,
-   - broadcast hook triggers for all users registered for that date.
+5. On confirmation, backend triggers SMS/WhatsApp notification hooks:
+   - direct hook for ride creator + requester,
+   - broadcast hook for all users registered for that date.
 
 > **Important**: SMS/WhatsApp require a provider (Twilio/Meta/etc.) and usually paid credits/subscription for production use.
 
