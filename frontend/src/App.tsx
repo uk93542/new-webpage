@@ -21,15 +21,6 @@ interface JoinRequest {
 
 const API_BASE = 'http://127.0.0.1:8000/api';
 
-async function readErrorMessage(response: Response): Promise<string> {
-  try {
-    const data = await response.json();
-    return data.error || 'Unknown error.';
-  } catch {
-    return 'Unknown error.';
-  }
-}
-
 export default function App() {
   // Form values for creating a ride.
   const [form, setForm] = useState({
@@ -57,14 +48,6 @@ export default function App() {
 
   async function loadRidesByDate(date: string) {
     const response = await fetch(`${API_BASE}/rides/?ride_date=${date}`);
-
-    if (!response.ok) {
-      const errorMessage = await readErrorMessage(response);
-      setMessage(`Could not load rides: ${errorMessage}`);
-      setRides([]);
-      return;
-    }
-
     const data = await response.json();
     setRides(data.rides || []);
   }
@@ -79,8 +62,7 @@ export default function App() {
     });
 
     if (!response.ok) {
-      const errorMessage = await readErrorMessage(response);
-      setMessage(`Could not create ride. ${errorMessage}`);
+      setMessage('Could not create ride. Please check your input.');
       return;
     }
 
@@ -105,8 +87,7 @@ export default function App() {
     });
 
     if (!response.ok) {
-      const errorMessage = await readErrorMessage(response);
-      setMessage(`Unable to send join request. ${errorMessage}`);
+      setMessage('Unable to send join request.');
       return;
     }
 
@@ -120,19 +101,20 @@ export default function App() {
     });
 
     if (!response.ok) {
-      const errorMessage = await readErrorMessage(response);
-      setMessage(`Could not confirm request. ${errorMessage}`);
+      setMessage('Could not confirm request.');
       return;
     }
 
-    setMessage('Request confirmed. Notifications sent to everyone registered for this date.');
+    setMessage('Request confirmed. SMS and WhatsApp notification hook triggered.');
     if (selectedDate) await loadRidesByDate(selectedDate);
   }
 
   return (
     <div className="container py-4">
       <h1 className="mb-3">Share Ride System</h1>
-      <p className="text-muted">Create a ride on any date, find same-date riders, and share booking updates.</p>
+      <p className="text-muted">
+        Create a future ride, view others on the same date, and request to share.
+      </p>
 
       {message && <div className="alert alert-info">{message}</div>}
 
