@@ -9,18 +9,16 @@ Beginner-friendly full-stack starter project for a **ride sharing system**.
 
 ## What this app does
 
-1. User creates a ride (for any date) with:
+1. User creates a future ride with:
    - Name
    - Place option (`station` or `airport`)
    - Roll number
    - Phone number
-   - Ride date (supports YYYY-MM-DD and DD-MM-YYYY at API level)
+   - Ride date
 2. Users can view rides on the same date.
 3. Users can request to join a ride.
 4. Ride creator can confirm request.
-5. On confirmation, backend triggers SMS/WhatsApp notification hooks:
-   - direct hook for ride creator + requester,
-   - broadcast hook for all users registered for that date.
+5. On confirmation, backend triggers notification hooks for SMS + WhatsApp.
 
 > **Important**: SMS/WhatsApp require a provider (Twilio/Meta/etc.) and usually paid credits/subscription for production use.
 
@@ -49,20 +47,6 @@ python manage.py runserver
 ```
 
 Backend API runs at: `http://127.0.0.1:8000`
-
-### If "Could not create ride" appears even after filling all fields
-
-Most common cause is missing database tables.
-
-Run these commands inside `backend/`:
-
-```bash
-python manage.py makemigrations
-python manage.py migrate
-python manage.py runserver
-```
-
-If backend is not running, frontend will also show create/join errors because API calls cannot reach `127.0.0.1:8000`.
 
 ---
 

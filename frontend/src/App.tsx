@@ -21,15 +21,6 @@ interface JoinRequest {
 
 const API_BASE = 'http://127.0.0.1:8000/api';
 
-async function readErrorMessage(response: Response): Promise<string> {
-  try {
-    const data = await response.json();
-    return data.error || 'Unknown error.';
-  } catch {
-    return 'Unknown error.';
-  }
-}
-
 export default function App() {
   // Form values for creating a ride.
   const [form, setForm] = useState({
@@ -56,22 +47,7 @@ export default function App() {
   }, [selectedDate]);
 
   async function loadRidesByDate(date: string) {
-    let response: Response;
-    try {
-      response = await fetch(`${API_BASE}/rides/?ride_date=${date}`);
-    } catch {
-      setMessage('Could not load rides: backend server is not reachable. Start Django runserver first.');
-      setRides([]);
-      return;
-    }
-
-    if (!response.ok) {
-      const errorMessage = await readErrorMessage(response);
-      setMessage(`Could not load rides: ${errorMessage}`);
-      setRides([]);
-      return;
-    }
-
+    const response = await fetch(`${API_BASE}/rides/?ride_date=${date}`);
     const data = await response.json();
     setRides(data.rides || []);
   }
@@ -79,21 +55,14 @@ export default function App() {
   async function createRide(e: React.FormEvent) {
     e.preventDefault();
 
-    let response: Response;
-    try {
-      response = await fetch(`${API_BASE}/rides/create/`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form)
-      });
-    } catch {
-      setMessage('Could not create ride: backend server is not reachable. Start Django runserver first.');
-      return;
-    }
+    const response = await fetch(`${API_BASE}/rides/create/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(form)
+    });
 
     if (!response.ok) {
-      const errorMessage = await readErrorMessage(response);
-      setMessage(`Could not create ride. ${errorMessage}`);
+      setMessage('Could not create ride. Please check your input.');
       return;
     }
 
@@ -111,21 +80,14 @@ export default function App() {
       return;
     }
 
-    let response: Response;
-    try {
-      response = await fetch(`${API_BASE}/rides/${rideId}/request/`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requester_name, requester_phone })
-      });
-    } catch {
-      setMessage('Unable to send join request: backend server is not reachable.');
-      return;
-    }
+    const response = await fetch(`${API_BASE}/rides/${rideId}/request/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requester_name, requester_phone })
+    });
 
     if (!response.ok) {
-      const errorMessage = await readErrorMessage(response);
-      setMessage(`Unable to send join request. ${errorMessage}`);
+      setMessage('Unable to send join request.');
       return;
     }
 
@@ -134,30 +96,25 @@ export default function App() {
   }
 
   async function confirmRequest(rideId: number, requestId: number) {
-    let response: Response;
-    try {
-      response = await fetch(`${API_BASE}/rides/${rideId}/requests/${requestId}/confirm/`, {
-        method: 'POST'
-      });
-    } catch {
-      setMessage('Could not confirm request: backend server is not reachable.');
-      return;
-    }
+    const response = await fetch(`${API_BASE}/rides/${rideId}/requests/${requestId}/confirm/`, {
+      method: 'POST'
+    });
 
     if (!response.ok) {
-      const errorMessage = await readErrorMessage(response);
-      setMessage(`Could not confirm request. ${errorMessage}`);
+      setMessage('Could not confirm request.');
       return;
     }
 
-    setMessage('Request confirmed. Notifications sent to everyone registered for this date.');
+    setMessage('Request confirmed. SMS and WhatsApp notification hook triggered.');
     if (selectedDate) await loadRidesByDate(selectedDate);
   }
 
   return (
     <div className="container py-4">
       <h1 className="mb-3">Share Ride System</h1>
-      <p className="text-muted">Create a ride on any date, find same-date riders, and share booking updates.</p>
+      <p className="text-muted">
+        Create a future ride, view others on the same date, and request to share.
+      </p>
 
       {message && <div className="alert alert-info">{message}</div>}
 
