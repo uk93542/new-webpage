@@ -9,18 +9,16 @@ Beginner-friendly full-stack starter project for a **ride sharing system**.
 
 ## What this app does
 
-1. User creates a ride (for any date) with:
+1. User creates a future ride with:
    - Name
    - Place option (`station` or `airport`)
    - Roll number
    - Phone number
-   - Ride date (supports YYYY-MM-DD and DD-MM-YYYY at API level)
+   - Ride date
 2. Users can view rides on the same date.
 3. Users can request to join a ride.
 4. Ride creator can confirm request.
-5. On confirmation, backend triggers SMS/WhatsApp notification hooks:
-   - direct hook for ride creator + requester,
-   - broadcast hook for all users registered for that date.
+5. On confirmation, backend triggers notification hooks for SMS + WhatsApp.
 
 > **Important**: SMS/WhatsApp require a provider (Twilio/Meta/etc.) and usually paid credits/subscription for production use.
 
@@ -36,26 +34,6 @@ npm run dev
 
 Open: `http://localhost:8080`
 
-### Vercel frontend deployment values
-
-When Vercel asks for build settings, use:
-
-```text
-Root Directory: frontend
-Install Command: npm install
-Build Command: npm run build
-Output Directory: dist
-```
-
-When Vercel asks for environment variables, add this after your Render backend is deployed:
-
-```text
-Key: API_BASE_URL
-Value: https://your-render-backend-url.onrender.com/api
-```
-
-`dist` is only the compiled frontend website folder that Vercel serves to visitors. It does **not** store user-entered ride information. User-entered ride data is sent to the Django backend API and stored in the backend database.
-
 ## Backend setup
 
 ```bash
@@ -69,42 +47,6 @@ python manage.py runserver
 ```
 
 Backend API runs at: `http://127.0.0.1:8000`
-
-### Render backend deployment values
-
-When Render asks for backend settings, use:
-
-```text
-Root Directory: backend
-Build Command: pip install -r requirements.txt && python manage.py migrate
-Start Command: gunicorn rideshare.wsgi:application
-```
-
-Add these Render environment variables:
-
-```text
-SECRET_KEY=replace-with-a-long-random-secret
-DEBUG=false
-ALLOWED_HOSTS=your-render-backend-url.onrender.com
-CORS_ALLOWED_ORIGINS=https://your-vercel-frontend-url.vercel.app
-USE_MYSQL=false
-```
-
-For production with MySQL, change `USE_MYSQL=false` to `USE_MYSQL=true` and add your MySQL values from the MySQL notes below.
-
-### If "Could not create ride" appears even after filling all fields
-
-Most common cause is missing database tables.
-
-Run these commands inside `backend/`:
-
-```bash
-python manage.py makemigrations
-python manage.py migrate
-python manage.py runserver
-```
-
-If backend is not running, frontend will also show create/join errors because API calls cannot reach `127.0.0.1:8000`.
 
 ---
 
