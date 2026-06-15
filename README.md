@@ -34,6 +34,26 @@ npm run dev
 
 Open: `http://localhost:8080`
 
+### Vercel frontend deployment values
+
+When Vercel asks for build settings, use:
+
+```text
+Root Directory: frontend
+Install Command: npm install
+Build Command: npm run build
+Output Directory: dist
+```
+
+When Vercel asks for environment variables, add this after your Render backend is deployed:
+
+```text
+Key: API_BASE_URL
+Value: https://your-render-backend-url.onrender.com/api
+```
+
+`dist` is only the compiled frontend website folder that Vercel serves to visitors. It does **not** store user-entered ride information. User-entered ride data is sent to the Django backend API and stored in the backend database.
+
 ## Backend setup
 
 ```bash
@@ -47,6 +67,60 @@ python manage.py runserver
 ```
 
 Backend API runs at: `http://127.0.0.1:8000`
+
+### Render backend deployment values
+
+When Render asks for backend settings, use:
+
+```text
+Root Directory: backend
+Build Command: pip install -r requirements.txt && python manage.py migrate
+Start Command: python -m gunicorn rideshare.wsgi:application
+```
+
+Add these Render environment variables:
+
+```text
+SECRET_KEY=replace-with-a-long-random-secret
+DEBUG=false
+ALLOWED_HOSTS=your-render-backend-url.onrender.com
+CORS_ALLOWED_ORIGINS=https://your-vercel-frontend-url.vercel.app
+USE_MYSQL=false
+```
+
+For production with MySQL, change `USE_MYSQL=false` to `USE_MYSQL=true` and add your MySQL values from the MySQL notes below.
+
+
+### Render error: `gunicorn: command not found`
+
+If Render logs show `bash: line 1: gunicorn: command not found`, Render did not install the `gunicorn` package before starting the service. This usually means Render deployed an older GitHub commit or the start command is using a shell command that cannot find the installed executable.
+
+Check these three things:
+
+1. Make sure your latest code is pushed to GitHub. `backend/requirements.txt` must include `gunicorn==23.0.0`.
+2. In Render, set the backend start command to:
+
+```text
+python -m gunicorn rideshare.wsgi:application
+```
+
+3. If Render still uses old dependencies, click **Manual Deploy** and choose **Clear build cache & deploy**.
+
+This repo also includes `backend/Procfile` with the same production start command, so platforms that read Procfiles can start the Django backend correctly.
+
+### If "Could not create ride" appears even after filling all fields
+
+Most common cause is missing database tables.
+
+Run these commands inside `backend/`:
+
+```bash
+python manage.py makemigrations
+python manage.py migrate
+python manage.py runserver
+```
+
+If backend is not running, frontend will also show create/join errors because API calls cannot reach `127.0.0.1:8000`.
 
 ---
 
