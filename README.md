@@ -21,6 +21,11 @@ Beginner-friendly full-stack starter project for a **ride sharing system**.
 5. On confirmation, backend triggers SMS/WhatsApp notification hooks:
    - direct hook for ride creator + requester,
    - broadcast hook for all users registered for that date.
+   - Ride date
+2. Users can view rides on the same date.
+3. Users can request to join a ride.
+4. Ride creator can confirm request.
+5. On confirmation, backend triggers notification hooks for SMS + WhatsApp.
 
 > **Important**: SMS/WhatsApp require a provider (Twilio/Meta/etc.) and usually paid credits/subscription for production use.
 

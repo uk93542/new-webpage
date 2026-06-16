@@ -2,6 +2,9 @@ import json
 import logging
 from datetime import date, datetime
 from django.db import OperationalError
+from datetime import date, datetime
+from django.db import OperationalError
+from datetime import date
 from django.http import JsonResponse, HttpRequest
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
@@ -108,6 +111,20 @@ def create_ride(request: HttpRequest) -> JsonResponse:
         return JsonResponse({'error': f'Could not create ride: {exc}'}, status=400)
 
     logger.info('Ride created successfully: ride_id=%s ride_date=%s phone=%s', ride.id, ride.ride_date, ride.phone_number)
+    payload = json.loads(request.body.decode('utf-8'))
+
+    ride_date = date.fromisoformat(payload['ride_date'])
+    if ride_date < date.today():
+        return JsonResponse({'error': 'Ride date must be today or future.'}, status=400)
+
+    ride = Ride.objects.create(
+        creator_name=payload['creator_name'],
+        place=payload['place'],
+        roll_number=payload['roll_number'],
+        phone_number=payload['phone_number'],
+        ride_date=ride_date,
+    )
+
     return JsonResponse({'ride': _serialize_ride(ride)}, status=201)
 
 
@@ -136,6 +153,14 @@ def create_join_request(request: HttpRequest, ride_id: int) -> JsonResponse:
         return JsonResponse({'error': f'Could not create join request: {exc}'}, status=400)
 
     logger.info('Join request created: request_id=%s ride_id=%s status=%s', join_request.id, ride.id, join_request.status)
+    payload = json.loads(request.body.decode('utf-8'))
+
+    join_request = JoinRequest.objects.create(
+        ride=ride,
+        requester_name=payload['requester_name'],
+        requester_phone=payload['requester_phone'],
+    )
+
     return JsonResponse({'request': _serialize_request(join_request)}, status=201)
 
 
