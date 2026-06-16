@@ -1,6 +1,7 @@
 import json
 from datetime import date, datetime
 from django.db import OperationalError
+from datetime import date
 from django.http import JsonResponse, HttpRequest
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
@@ -21,6 +22,7 @@ def _parse_date(raw_date: str) -> date:
             continue
 
     raise ValueError('Invalid date format. Use YYYY-MM-DD or DD-MM-YYYY.')
+from .services import send_confirmation_notifications
 
 
 def _serialize_request(req: JoinRequest) -> dict:
@@ -56,6 +58,7 @@ def list_rides(request: HttpRequest) -> JsonResponse:
             queryset = queryset.filter(ride_date=parsed_date)
         except ValueError as exc:
             return JsonResponse({'error': str(exc)}, status=400)
+        queryset = queryset.filter(ride_date=ride_date)
 
     return JsonResponse({'rides': [_serialize_ride(ride) for ride in queryset]})
 
@@ -91,6 +94,19 @@ def create_ride(request: HttpRequest) -> JsonResponse:
         )
     except Exception as exc:  # noqa: BLE001 - beginner-friendly API error feedback
         return JsonResponse({'error': f'Could not create ride: {exc}'}, status=400)
+    payload = json.loads(request.body.decode('utf-8'))
+
+    ride_date = date.fromisoformat(payload['ride_date'])
+    if ride_date < date.today():
+        return JsonResponse({'error': 'Ride date must be today or future.'}, status=400)
+
+    ride = Ride.objects.create(
+        creator_name=payload['creator_name'],
+        place=payload['place'],
+        roll_number=payload['roll_number'],
+        phone_number=payload['phone_number'],
+        ride_date=ride_date,
+    )
 
     return JsonResponse({'ride': _serialize_ride(ride)}, status=201)
 
@@ -111,6 +127,13 @@ def create_join_request(request: HttpRequest, ride_id: int) -> JsonResponse:
         return JsonResponse({'error': f'Missing field: {exc.args[0]}'}, status=400)
     except Exception as exc:  # noqa: BLE001 - beginner-friendly API error feedback
         return JsonResponse({'error': f'Could not create join request: {exc}'}, status=400)
+    payload = json.loads(request.body.decode('utf-8'))
+
+    join_request = JoinRequest.objects.create(
+        ride=ride,
+        requester_name=payload['requester_name'],
+        requester_phone=payload['requester_phone'],
+    )
 
     return JsonResponse({'request': _serialize_request(join_request)}, status=201)
 
@@ -125,6 +148,7 @@ def confirm_join_request(request: HttpRequest, ride_id: int, request_id: int) ->
     join_request.save(update_fields=['status'])
 
     # Trigger direct notification hook for ride owner and requester.
+    # Trigger notification hook to both passengers.
     send_confirmation_notifications(
         ride_creator_phone=ride.phone_number,
         requester_phone=join_request.requester_phone,
