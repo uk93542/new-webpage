@@ -9,11 +9,19 @@ Beginner-friendly full-stack starter project for a **ride sharing system**.
 
 ## What this app does
 
+1. User creates a ride (for any date) with:
 1. User creates a future ride with:
    - Name
    - Place option (`station` or `airport`)
    - Roll number
    - Phone number
+   - Ride date (supports YYYY-MM-DD and DD-MM-YYYY at API level)
+2. Users can view rides on the same date.
+3. Users can request to join a ride.
+4. Ride creator can confirm request.
+5. On confirmation, backend triggers SMS/WhatsApp notification hooks:
+   - direct hook for ride creator + requester,
+   - broadcast hook for all users registered for that date.
    - Ride date
 2. Users can view rides on the same date.
 3. Users can request to join a ride.

@@ -88,8 +88,10 @@ USE_TZ = True
 STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Allow frontend local development server.
-CORS_ALLOWED_ORIGINS = [
-    'http://localhost:8080',
-    'http://127.0.0.1:8080',
-]
+# Allow frontend local development server and deployed frontend URLs.
+# For production, set CORS_ALLOWED_ORIGINS in Render like:
+# CORS_ALLOWED_ORIGINS=https://your-vercel-app.vercel.app,https://www.yourdomain.com
+CORS_ALLOWED_ORIGINS = os.getenv(
+    'CORS_ALLOWED_ORIGINS',
+    'http://localhost:8080,http://127.0.0.1:8080',
+).split(',')

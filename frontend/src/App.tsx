@@ -1,5 +1,10 @@
 import React, { useEffect, useState } from 'react';
 
+// Webpack replaces this value during build.
+// Local default: http://127.0.0.1:8000/api
+// Production example: https://your-render-backend.onrender.com/api
+declare const API_BASE_URL: string;
+
 // Data shape for rides returned from backend API.
 interface Ride {
   id: number;
@@ -19,7 +24,20 @@ interface JoinRequest {
   status: 'pending' | 'accepted' | 'rejected';
 }
 
-const API_BASE = 'http://127.0.0.1:8000/api';
+const API_BASE = API_BASE_URL;
+const isBrowser = typeof window !== 'undefined';
+const isLocalPage = isBrowser && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+const isUsingLocalBackend = API_BASE.includes('127.0.0.1') || API_BASE.includes('localhost');
+const isProductionApiMisconfigured = isBrowser && !isLocalPage && isUsingLocalBackend;
+
+async function readErrorMessage(response: Response): Promise<string> {
+  try {
+    const data = await response.json();
+    return data.error || 'Unknown error.';
+  } catch {
+    return 'Unknown error.';
+  }
+}
 
 export default function App() {
   // Form values for creating a ride.
@@ -40,35 +58,92 @@ export default function App() {
   // A friendly status message for users.
   const [message, setMessage] = useState('');
 
+  // Tracks API calls so the user sees that a create/search action is happening.
+  const [isBusy, setIsBusy] = useState(false);
+
   // Load rides whenever selected date changes.
   useEffect(() => {
     if (!selectedDate) return;
-    loadRidesByDate(selectedDate);
+    loadRidesByDate(selectedDate, { showStatus: false });
   }, [selectedDate]);
 
-  async function loadRidesByDate(date: string) {
-    const response = await fetch(`${API_BASE}/rides/?ride_date=${date}`);
+  async function loadRidesByDate(date: string, options = { showStatus: true }) {
+    setIsBusy(true);
+
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE}/rides/?ride_date=${encodeURIComponent(date)}`);
+    } catch {
+      setMessage(
+        isProductionApiMisconfigured
+          ? 'Could not load rides: frontend is deployed, but API_BASE_URL still points to localhost. Add your Render backend URL in Vercel as API_BASE_URL.'
+          : 'Could not load rides: backend server is not reachable. Start Django runserver first.'
+      );
+      setRides([]);
+      setIsBusy(false);
+      return [];
+    }
+
+    if (!response.ok) {
+      const errorMessage = await readErrorMessage(response);
+      setMessage(`Could not load rides: ${errorMessage}`);
+      setRides([]);
+      setIsBusy(false);
+      return [];
+    }
+
     const data = await response.json();
-    setRides(data.rides || []);
+    const loadedRides = data.rides || [];
+    setRides(loadedRides);
+
+    if (options.showStatus) {
+      setMessage(
+        loadedRides.length > 0
+          ? `Found ${loadedRides.length} ride(s) for ${date}.`
+          : `No rides found for ${date}.`
+      );
+    }
+
+    setIsBusy(false);
+    return loadedRides;
   }
 
   async function createRide(e: React.FormEvent) {
     e.preventDefault();
 
-    const response = await fetch(`${API_BASE}/rides/create/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form)
-    });
+    setMessage('Creating ride...');
+    setIsBusy(true);
 
-    if (!response.ok) {
-      setMessage('Could not create ride. Please check your input.');
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE}/rides/create/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form)
+      });
+    } catch {
+      setMessage(
+        isProductionApiMisconfigured
+          ? 'Could not create ride: frontend is deployed, but API_BASE_URL still points to localhost. Add your Render backend URL in Vercel as API_BASE_URL.'
+          : 'Could not create ride: backend server is not reachable. Start Django runserver first.'
+      );
+      setIsBusy(false);
       return;
     }
 
-    setMessage('Ride created successfully!');
+    if (!response.ok) {
+      const errorMessage = await readErrorMessage(response);
+      setMessage(`Could not create ride. ${errorMessage}`);
+      setIsBusy(false);
+      return;
+    }
+
+    const data = await response.json();
     setSelectedDate(form.ride_date);
-    await loadRidesByDate(form.ride_date);
+    setRides(data.ride ? [data.ride] : []);
+    await loadRidesByDate(form.ride_date, { showStatus: false });
+    setMessage('Ride created successfully! It is now listed below for the selected date.');
+    setIsBusy(false);
   }
 
   async function requestToJoin(rideId: number) {
@@ -80,14 +155,21 @@ export default function App() {
       return;
     }
 
-    const response = await fetch(`${API_BASE}/rides/${rideId}/request/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ requester_name, requester_phone })
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE}/rides/${rideId}/request/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requester_name, requester_phone })
+      });
+    } catch {
+      setMessage('Unable to send join request: backend server is not reachable.');
+      return;
+    }
 
     if (!response.ok) {
-      setMessage('Unable to send join request.');
+      const errorMessage = await readErrorMessage(response);
+      setMessage(`Unable to send join request. ${errorMessage}`);
       return;
     }
 
@@ -96,25 +178,38 @@ export default function App() {
   }
 
   async function confirmRequest(rideId: number, requestId: number) {
-    const response = await fetch(`${API_BASE}/rides/${rideId}/requests/${requestId}/confirm/`, {
-      method: 'POST'
-    });
-
-    if (!response.ok) {
-      setMessage('Could not confirm request.');
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE}/rides/${rideId}/requests/${requestId}/confirm/`, {
+        method: 'POST'
+      });
+    } catch {
+      setMessage('Could not confirm request: backend server is not reachable.');
       return;
     }
 
-    setMessage('Request confirmed. SMS and WhatsApp notification hook triggered.');
+    if (!response.ok) {
+      const errorMessage = await readErrorMessage(response);
+      setMessage(`Could not confirm request. ${errorMessage}`);
+      return;
+    }
+
+    setMessage('Request confirmed. Notifications sent to everyone registered for this date.');
     if (selectedDate) await loadRidesByDate(selectedDate);
   }
 
   return (
     <div className="container py-4">
       <h1 className="mb-3">Share Ride System</h1>
-      <p className="text-muted">
-        Create a future ride, view others on the same date, and request to share.
-      </p>
+      <p className="text-muted">Create a ride on any date, find same-date riders, and share booking updates.</p>
+
+      {isProductionApiMisconfigured && (
+        <div className="alert alert-warning">
+          Frontend is deployed, but the backend API is still set to localhost. In Vercel, set
+          <strong> API_BASE_URL</strong> to your Render backend URL, for example
+          <code> https://your-render-backend.onrender.com/api</code>.
+        </div>
+      )}
 
       {message && <div className="alert alert-info">{message}</div>}
 
@@ -175,8 +270,8 @@ export default function App() {
           </div>
 
           <div className="col-12">
-            <button className="btn btn-primary" type="submit">
-              Create Ride
+            <button className="btn btn-primary" type="submit" disabled={isBusy}>
+              {isBusy ? 'Please wait...' : 'Create Ride'}
             </button>
           </div>
         </form>
@@ -185,12 +280,23 @@ export default function App() {
       <div className="card p-3 shadow-sm">
         <h2 className="h5">Find Rides by Date</h2>
         <div className="mb-3">
-          <input
-            type="date"
-            className="form-control w-auto"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-          />
+          <div className="d-flex flex-wrap align-items-center gap-2">
+            <input
+              type="date"
+              className="form-control w-auto"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+            />
+            <button
+              className="btn btn-outline-secondary"
+              type="button"
+              disabled={!selectedDate || isBusy}
+              onClick={() => loadRidesByDate(selectedDate)}
+            >
+              Find Rides
+            </button>
+          </div>
+          <div className="form-text">Choose a date or click Find Rides to load everyone registered for that day.</div>
         </div>
 
         {rides.length === 0 ? (
