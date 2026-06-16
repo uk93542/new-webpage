@@ -1,0 +1,13 @@
+# Frontend dependencies/build output
+frontend/node_modules/
+frontend/dist/
+
+# Python local files
+backend/.venv/
+backend/db.sqlite3
+__pycache__/
+*.py[cod]
+
+# Local env files
+.env
+backend/.env
