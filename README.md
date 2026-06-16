@@ -10,7 +10,6 @@ Beginner-friendly full-stack starter project for a **ride sharing system**.
 ## What this app does
 
 1. User creates a ride (for any date) with:
-1. User creates a future ride with:
    - Name
    - Place option (`station` or `airport`)
    - Roll number
@@ -98,6 +97,38 @@ USE_MYSQL=false
 
 For production with MySQL, change `USE_MYSQL=false` to `USE_MYSQL=true` and add your MySQL values from the MySQL notes below.
 
+
+
+### Where to see live backend logs on Render
+
+When someone clicks **Create Ride**, **Find Rides**, **Request to Join**, or **Confirm**, the Django backend now writes helpful log lines to stdout. On Render, open:
+
+```text
+Render Dashboard -> your backend Web Service -> Logs
+```
+
+You should see messages like:
+
+```text
+Create ride request received: creator=... place=... roll=... phone=... ride_date=... path=/api/rides/create/
+Ride created successfully: ride_id=... ride_date=... phone=...
+Ride search received: ride_date=... path=/api/rides/
+Ride search completed: ride_date=... results=...
+```
+
+If your Render logs show requests to `/rides/create/` or `/rides/` without `/api`, your Vercel `API_BASE_URL` is missing `/api`. Use either of these values in Vercel:
+
+```text
+API_BASE_URL=https://your-render-backend-url.onrender.com/api
+```
+
+or just:
+
+```text
+API_BASE_URL=https://your-render-backend-url.onrender.com
+```
+
+The frontend normalizes both values, but after changing Vercel environment variables you must redeploy the frontend.
 
 ### Render error: `gunicorn: command not found`
 

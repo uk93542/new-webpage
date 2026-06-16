@@ -24,7 +24,13 @@ interface JoinRequest {
   status: 'pending' | 'accepted' | 'rejected';
 }
 
-const API_BASE = API_BASE_URL;
+// Accept either the full API URL (ending in /api) or only the Render site URL.
+// Example accepted values:
+// - https://new-webpage-0c7f.onrender.com/api
+// - https://new-webpage-0c7f.onrender.com
+const API_BASE = API_BASE_URL.replace(/\/$/, '').endsWith('/api')
+  ? API_BASE_URL.replace(/\/$/, '')
+  : `${API_BASE_URL.replace(/\/$/, '')}/api`;
 const isBrowser = typeof window !== 'undefined';
 const isLocalPage = isBrowser && ['localhost', '127.0.0.1'].includes(window.location.hostname);
 const isUsingLocalBackend = API_BASE.includes('127.0.0.1') || API_BASE.includes('localhost');
@@ -33,9 +39,9 @@ const isProductionApiMisconfigured = isBrowser && !isLocalPage && isUsingLocalBa
 async function readErrorMessage(response: Response): Promise<string> {
   try {
     const data = await response.json();
-    return data.error || 'Unknown error.';
+    return data.error || `Request failed with status ${response.status}.`;
   } catch {
-    return 'Unknown error.';
+    return `Request failed with status ${response.status}. Check Render logs for the exact backend path/error.`;
   }
 }
 
@@ -207,7 +213,8 @@ export default function App() {
         <div className="alert alert-warning">
           Frontend is deployed, but the backend API is still set to localhost. In Vercel, set
           <strong> API_BASE_URL</strong> to your Render backend URL, for example
-          <code> https://your-render-backend.onrender.com/api</code>.
+          <code> https://your-render-backend.onrender.com/api</code>. If you enter only
+          <code> https://your-render-backend.onrender.com</code>, this app will add <code>/api</code> automatically.
         </div>
       )}
 
