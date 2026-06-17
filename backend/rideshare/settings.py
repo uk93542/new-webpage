@@ -5,6 +5,7 @@ This file is intentionally commented to help new developers understand each sect
 
 from pathlib import Path
 import os
+import dj_database_url
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -57,9 +58,16 @@ WSGI_APPLICATION = 'rideshare.wsgi.application'
 ASGI_APPLICATION = 'rideshare.asgi.application'
 
 # Database setup:
-# - Uses MySQL when USE_MYSQL=true in .env.
+# - Uses Render PostgreSQL when DATABASE_URL is present.
+# - Uses MySQL when USE_MYSQL=true.
 # - Falls back to SQLite for quick local setup.
-if os.getenv('USE_MYSQL', 'false').lower() == 'true':
+DATABASE_URL = os.getenv('DATABASE_URL')
+
+if DATABASE_URL:
+    DATABASES = {
+        'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600, ssl_require=True)
+    }
+elif os.getenv('USE_MYSQL', 'false').lower() == 'true':
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.mysql',

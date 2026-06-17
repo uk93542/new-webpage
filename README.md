@@ -1,6 +1,6 @@
 # Share Ride Website Monorepo
 
-Beginner-friendly full-stack starter project for a **ride sharing system**.
+Beginner-friendly full-stack starter project for a **ride sharing system** with login, registration, dashboard notifications, and ride matching.
 
 ## Project structure
 
@@ -9,23 +9,22 @@ Beginner-friendly full-stack starter project for a **ride sharing system**.
 
 ## What this app does
 
-1. User creates a ride (for any date) with:
+1. User registers with name, email, address, government ID details, and password.
+2. User logs in with email and password before accessing the dashboard.
+3. Logged-in user creates a ride (for any date) with:
    - Name
    - Place option (`station` or `airport`)
    - Roll number
    - Phone number
    - Ride date (supports YYYY-MM-DD and DD-MM-YYYY at API level)
-2. Users can view rides on the same date.
-3. Users can request to join a ride.
-4. Ride creator can confirm request.
-5. On confirmation, backend triggers SMS/WhatsApp notification hooks:
+4. Users can view rides on the same date.
+5. Users can request to join someone else's ride.
+6. Same users cannot request/approve their own ride requests.
+7. Ride creator gets an in-app dashboard notification for new requests.
+8. Ride creator can confirm requests.
+9. On confirmation, backend triggers SMS/WhatsApp notification hooks:
    - direct hook for ride creator + requester,
    - broadcast hook for all users registered for that date.
-   - Ride date
-2. Users can view rides on the same date.
-3. Users can request to join a ride.
-4. Ride creator can confirm request.
-5. On confirmation, backend triggers notification hooks for SMS + WhatsApp.
 
 > **Important**: SMS/WhatsApp require a provider (Twilio/Meta/etc.) and usually paid credits/subscription for production use.
 
@@ -95,7 +94,9 @@ CORS_ALLOWED_ORIGINS=https://your-vercel-frontend-url.vercel.app
 USE_MYSQL=false
 ```
 
-For production with MySQL, change `USE_MYSQL=false` to `USE_MYSQL=true` and add your MySQL values from the MySQL notes below.
+For your Render PostgreSQL subscription, add Render's `DATABASE_URL` environment variable to the backend service. The app will automatically use PostgreSQL when `DATABASE_URL` exists. After adding it, redeploy and run the build command so migrations create the auth/profile/ride tables.
+
+For production with MySQL instead, change `USE_MYSQL=false` to `USE_MYSQL=true` and add your MySQL values from the MySQL notes below.
 
 
 
@@ -162,6 +163,27 @@ python manage.py runserver
 If backend is not running, frontend will also show create/join errors because API calls cannot reach `127.0.0.1:8000`.
 
 ---
+
+
+### Email/SMS/WhatsApp notifications
+
+The current app creates **in-app dashboard notifications** immediately when someone requests to join a ride. Users can see these after login under **Dashboard -> Notifications**.
+
+For real email, SMS, or WhatsApp delivery, you must add a provider account and API keys:
+
+- Email: SendGrid, Mailgun, Amazon SES, or Gmail SMTP for testing.
+- SMS: Twilio, MessageBird, or another SMS provider.
+- WhatsApp: Meta WhatsApp Cloud API or Twilio WhatsApp.
+
+After choosing a provider, store keys in Render environment variables, for example:
+
+```text
+EMAIL_API_KEY=your-provider-key
+SMS_API_KEY=your-provider-key
+WHATSAPP_ACCESS_TOKEN=your-meta-or-twilio-token
+```
+
+Then replace the placeholder print statements in `backend/rides/services.py` with real provider API calls. Do not put provider secrets directly in GitHub.
 
 ## MySQL notes
 
