@@ -6,6 +6,11 @@ from datetime import date, datetime
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
 from django.db import IntegrityError, OperationalError
+from datetime import date, datetime
+from django.db import OperationalError
+from datetime import date, datetime
+from django.db import OperationalError
+from datetime import date
 from django.http import JsonResponse, HttpRequest
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
