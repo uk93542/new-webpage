@@ -1,0 +1,328 @@
+import React, { useEffect, useState } from 'react';
+
+declare const API_BASE_URL: string;
+
+interface User {
+  id: number;
+  first_name: string;
+  last_name: string;
+  name: string;
+  email: string;
+  address: string;
+  gov_id_type: string;
+  gov_id_number: string;
+}
+
+interface NotificationItem {
+  id: number;
+  title: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+}
+
+interface JoinRequest {
+  id: number;
+  requester_user_id: number | null;
+  requester_name: string;
+  requester_phone: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  is_mine: boolean;
+}
+
+interface Ride {
+  id: number;
+  creator_user_id: number | null;
+  creator_name: string;
+  place: 'station' | 'airport';
+  roll_number: string;
+  phone_number: string;
+  ride_date: string;
+  is_creator: boolean;
+  requests: JoinRequest[];
+}
+
+type Page = 'home' | 'features' | 'about' | 'contact' | 'login' | 'register' | 'dashboard' | 'profile' | 'notifications' | 'share';
+
+const API_BASE = API_BASE_URL.replace(/\/$/, '').endsWith('/api')
+  ? API_BASE_URL.replace(/\/$/, '')
+  : `${API_BASE_URL.replace(/\/$/, '')}/api`;
+const isBrowser = typeof window !== 'undefined';
+const isLocalPage = isBrowser && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+const isUsingLocalBackend = API_BASE.includes('127.0.0.1') || API_BASE.includes('localhost');
+const isProductionApiMisconfigured = isBrowser && !isLocalPage && isUsingLocalBackend;
+
+async function readErrorMessage(response: Response): Promise<string> {
+  try {
+    const data = await response.json();
+    return data.error || `Request failed with status ${response.status}.`;
+  } catch {
+    return `Request failed with status ${response.status}. Check Render logs for the exact backend path/error.`;
+  }
+}
+
+export default function App() {
+  const [page, setPage] = useState<Page>('home');
+  const [token, setToken] = useState(() => window.localStorage.getItem('shareRideToken') || '');
+  const [user, setUser] = useState<User | null>(null);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [message, setMessage] = useState('');
+  const [isBusy, setIsBusy] = useState(false);
+  const [loginForm, setLoginForm] = useState({ email: '', password: '' });
+  const [registerForm, setRegisterForm] = useState({
+    first_name: '',
+    last_name: '',
+    email: '',
+    address: '',
+    gov_id_type: 'aadhaar',
+    gov_id_number: '',
+    password: '',
+  });
+  const [rideForm, setRideForm] = useState({ place: 'station', roll_number: '', phone_number: '', ride_date: '' });
+  const [selectedDate, setSelectedDate] = useState('');
+  const [rides, setRides] = useState<Ride[]>([]);
+
+  useEffect(() => {
+    if (token) {
+      loadMe(token);
+      loadNotifications(token);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (selectedDate) loadRidesByDate(selectedDate, { showStatus: false });
+  }, [selectedDate, token]);
+
+  function authHeaders() {
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }
+
+  async function apiFetch(path: string, options: RequestInit = {}) {
+    return fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(),
+        ...(options.headers || {}),
+      },
+    });
+  }
+
+  async function loadMe(activeToken = token) {
+    if (!activeToken) return;
+    const response = await fetch(`${API_BASE}/auth/me/`, { headers: { Authorization: `Bearer ${activeToken}` } });
+    if (response.ok) {
+      const data = await response.json();
+      setUser(data.user);
+    }
+  }
+
+  async function loadNotifications(activeToken = token) {
+    if (!activeToken) return;
+    const response = await fetch(`${API_BASE}/notifications/`, { headers: { Authorization: `Bearer ${activeToken}` } });
+    if (response.ok) {
+      const data = await response.json();
+      setNotifications(data.notifications || []);
+    }
+  }
+
+  async function handleLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setIsBusy(true);
+    const response = await apiFetch('/auth/login/', { method: 'POST', body: JSON.stringify(loginForm) });
+    setIsBusy(false);
+    if (!response.ok) {
+      setMessage(await readErrorMessage(response));
+      return;
+    }
+    const data = await response.json();
+    window.localStorage.setItem('shareRideToken', data.token);
+    setToken(data.token);
+    setUser(data.user);
+    setMessage('Login successful. Welcome to your dashboard.');
+    setPage('dashboard');
+  }
+
+  async function handleRegister(e: React.FormEvent) {
+    e.preventDefault();
+    setIsBusy(true);
+    const response = await apiFetch('/auth/register/', { method: 'POST', body: JSON.stringify(registerForm) });
+    setIsBusy(false);
+    if (!response.ok) {
+      setMessage(await readErrorMessage(response));
+      return;
+    }
+    setMessage('Registration successful. You can now login using your email and password.');
+    setPage('login');
+  }
+
+  function logout() {
+    window.localStorage.removeItem('shareRideToken');
+    setToken('');
+    setUser(null);
+    setNotifications([]);
+    setPage('home');
+    setMessage('Logged out.');
+  }
+
+  async function loadRidesByDate(date: string, options = { showStatus: true }) {
+    setIsBusy(true);
+    const response = await apiFetch(`/rides/?ride_date=${encodeURIComponent(date)}`);
+    setIsBusy(false);
+    if (!response.ok) {
+      setMessage(`Could not load rides: ${await readErrorMessage(response)}`);
+      setRides([]);
+      return;
+    }
+    const data = await response.json();
+    setRides(data.rides || []);
+    if (options.showStatus) setMessage(`Found ${(data.rides || []).length} ride(s) for ${date}.`);
+  }
+
+  async function createRide(e: React.FormEvent) {
+    e.preventDefault();
+    if (!token) {
+      setMessage('Please login before creating a ride.');
+      setPage('login');
+      return;
+    }
+    setIsBusy(true);
+    const response = await apiFetch('/rides/create/', { method: 'POST', body: JSON.stringify(rideForm) });
+    setIsBusy(false);
+    if (!response.ok) {
+      setMessage(`Could not create ride: ${await readErrorMessage(response)}`);
+      return;
+    }
+    setSelectedDate(rideForm.ride_date);
+    await loadRidesByDate(rideForm.ride_date, { showStatus: false });
+    setMessage('Ride created successfully and listed below.');
+  }
+
+  async function requestToJoin(ride: Ride) {
+    if (!token) {
+      setMessage('Please login before requesting to join a ride.');
+      setPage('login');
+      return;
+    }
+    if (ride.is_creator) {
+      setMessage('You cannot request to join your own ride.');
+      return;
+    }
+    const requester_phone = window.prompt('Your phone number for ride coordination:');
+    if (!requester_phone) return;
+    const response = await apiFetch(`/rides/${ride.id}/request/`, { method: 'POST', body: JSON.stringify({ requester_phone }) });
+    if (!response.ok) {
+      setMessage(await readErrorMessage(response));
+      return;
+    }
+    setMessage('Join request sent. The ride creator will see it in their notifications/dashboard.');
+    await loadNotifications();
+    if (selectedDate) await loadRidesByDate(selectedDate, { showStatus: false });
+  }
+
+  async function confirmRequest(ride: Ride, request: JoinRequest) {
+    if (!ride.is_creator) {
+      setMessage('Only the ride creator can approve this request.');
+      return;
+    }
+    if (request.is_mine) {
+      setMessage('You cannot approve your own request.');
+      return;
+    }
+    const response = await apiFetch(`/rides/${ride.id}/requests/${request.id}/confirm/`, { method: 'POST' });
+    if (!response.ok) {
+      setMessage(await readErrorMessage(response));
+      return;
+    }
+    setMessage('Request approved. Dashboard notification and notification hooks were triggered.');
+    await loadNotifications();
+    if (selectedDate) await loadRidesByDate(selectedDate, { showStatus: false });
+  }
+
+  function renderNavbar() {
+    return (
+      <nav className="navbar navbar-expand-lg bg-white border-bottom sticky-top">
+        <div className="container">
+          <button className="navbar-brand btn btn-link text-decoration-none fw-bold" onClick={() => setPage('home')}>Share Ride</button>
+          <div className="d-flex flex-wrap gap-2">
+            <button className="btn btn-link" onClick={() => setPage('features')}>Features</button>
+            <button className="btn btn-link" onClick={() => setPage('about')}>About</button>
+            <button className="btn btn-link" onClick={() => setPage('contact')}>Contact</button>
+            {user ? (
+              <>
+                <button className="btn btn-outline-primary" onClick={() => setPage('dashboard')}>Dashboard</button>
+                <button className="btn btn-outline-secondary" onClick={logout}>Logout</button>
+              </>
+            ) : (
+              <>
+                <button className="btn btn-outline-primary" onClick={() => setPage('login')}>Login</button>
+                <button className="btn btn-primary" onClick={() => setPage('register')}>Register</button>
+              </>
+            )}
+          </div>
+        </div>
+      </nav>
+    );
+  }
+
+  function renderHome() {
+    return (
+      <>
+        <section className="p-5 bg-light rounded-3 my-4">
+          <h1 className="display-5 fw-bold">Share rides safely with verified students and passengers.</h1>
+          <p className="lead">Login first, create a ride, find people going on the same date, and request to share.</p>
+          <button className="btn btn-primary btn-lg me-2" onClick={() => setPage(user ? 'share' : 'login')}>Start Sharing</button>
+          <button className="btn btn-outline-secondary btn-lg" onClick={() => setPage('register')}>Create Account</button>
+        </section>
+        <section className="row g-3 my-4">
+          <div className="col-md-4"><div className="card h-100 p-3"><h3>Problem Statement</h3><p>Travelers often go to the same station or airport but cannot easily find trusted ride partners.</p></div></div>
+          <div className="col-md-4"><div className="card h-100 p-3"><h3>Features</h3><p>Verified registration, ride matching by date, join requests, dashboard notifications, and approval control.</p></div></div>
+          <div className="col-md-4"><div className="card h-100 p-3"><h3>How It Works</h3><p>Register, login, create or find a ride, request to join, and wait for the ride creator to approve.</p></div></div>
+        </section>
+        <section className="text-center my-5"><h2>Ready to save money and travel together?</h2><button className="btn btn-success" onClick={() => setPage(user ? 'share' : 'login')}>Go to Share My Ride</button></section>
+      </>
+    );
+  }
+
+  function renderLogin() {
+    return <section className="card p-4 my-4"><h2>Login</h2><form onSubmit={handleLogin} className="row g-3"><div className="col-md-6"><label className="form-label">Email</label><input className="form-control" type="email" value={loginForm.email} onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })} required /></div><div className="col-md-6"><label className="form-label">Password</label><input className="form-control" type="password" value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} required /></div><div><button className="btn btn-primary" disabled={isBusy}>{isBusy ? 'Please wait...' : 'Login'}</button><button type="button" className="btn btn-link" onClick={() => setPage('register')}>Need an account? Register</button></div></form></section>;
+  }
+
+  function renderRegister() {
+    return <section className="card p-4 my-4"><h2>Register</h2><form onSubmit={handleRegister} className="row g-3"><div className="col-md-6"><label className="form-label">First Name</label><input className="form-control" value={registerForm.first_name} onChange={(e) => setRegisterForm({ ...registerForm, first_name: e.target.value })} required /></div><div className="col-md-6"><label className="form-label">Last Name</label><input className="form-control" value={registerForm.last_name} onChange={(e) => setRegisterForm({ ...registerForm, last_name: e.target.value })} required /></div><div className="col-md-6"><label className="form-label">Mail ID</label><input className="form-control" type="email" value={registerForm.email} onChange={(e) => setRegisterForm({ ...registerForm, email: e.target.value })} required /></div><div className="col-md-6"><label className="form-label">Address</label><input className="form-control" value={registerForm.address} onChange={(e) => setRegisterForm({ ...registerForm, address: e.target.value })} required /></div><div className="col-md-6"><label className="form-label">Gov ID Type</label><select className="form-select" value={registerForm.gov_id_type} onChange={(e) => setRegisterForm({ ...registerForm, gov_id_type: e.target.value })}><option value="aadhaar">Aadhaar</option><option value="passport">Passport</option><option value="driving_license">Driving License</option><option value="voter_id">Voter ID</option><option value="other">Other</option></select></div><div className="col-md-6"><label className="form-label">Gov ID Number</label><input className="form-control" value={registerForm.gov_id_number} onChange={(e) => setRegisterForm({ ...registerForm, gov_id_number: e.target.value })} required /></div><div className="col-md-6"><label className="form-label">Create Password</label><input className="form-control" type="password" value={registerForm.password} onChange={(e) => setRegisterForm({ ...registerForm, password: e.target.value })} required /></div><div><button className="btn btn-primary" disabled={isBusy}>{isBusy ? 'Please wait...' : 'Register'}</button></div></form></section>;
+  }
+
+  function renderDashboard() {
+    if (!user) return renderLogin();
+    return <section className="my-4"><h2>Dashboard</h2><p>Welcome, {user.name}. Use the dashboard links below.</p><div className="row g-3"><div className="col-md-4"><button className="card p-4 w-100 text-start" onClick={() => setPage('share')}><h3>Share My Ride</h3><p>Create rides and approve requests.</p></button></div><div className="col-md-4"><button className="card p-4 w-100 text-start" onClick={() => setPage('profile')}><h3>Profile</h3><p>View your registered details.</p></button></div><div className="col-md-4"><button className="card p-4 w-100 text-start" onClick={() => { loadNotifications(); setPage('notifications'); }}><h3>Notifications</h3><p>{notifications.length} recent notification(s).</p></button></div></div></section>;
+  }
+
+  function renderProfile() {
+    if (!user) return renderLogin();
+    return <section className="card p-4 my-4"><h2>Profile</h2><p><strong>Name:</strong> {user.name}</p><p><strong>Email:</strong> {user.email}</p><p><strong>Address:</strong> {user.address}</p><p><strong>Gov ID:</strong> {user.gov_id_type} - {user.gov_id_number}</p></section>;
+  }
+
+  function renderNotifications() {
+    if (!user) return renderLogin();
+    return <section className="card p-4 my-4"><h2>Notifications</h2>{notifications.length === 0 ? <p>No notifications yet.</p> : <ul className="list-group">{notifications.map((item) => <li className="list-group-item" key={item.id}><strong>{item.title}</strong><p className="mb-0">{item.message}</p><small>{new Date(item.created_at).toLocaleString()}</small></li>)}</ul>}</section>;
+  }
+
+  function renderShareRide() {
+    if (!user) return renderLogin();
+    return <section className="my-4"><h2>Share My Ride</h2><div className="card p-4 mb-4"><h3>Create a Ride</h3><form className="row g-3" onSubmit={createRide}><div className="col-md-4"><label className="form-label">Place</label><select className="form-select" value={rideForm.place} onChange={(e) => setRideForm({ ...rideForm, place: e.target.value })}><option value="station">Station</option><option value="airport">Airport</option></select></div><div className="col-md-4"><label className="form-label">Roll Number</label><input className="form-control" value={rideForm.roll_number} onChange={(e) => setRideForm({ ...rideForm, roll_number: e.target.value })} required /></div><div className="col-md-4"><label className="form-label">Phone Number</label><input className="form-control" value={rideForm.phone_number} onChange={(e) => setRideForm({ ...rideForm, phone_number: e.target.value })} required /></div><div className="col-md-4"><label className="form-label">Ride Date</label><input type="date" className="form-control" value={rideForm.ride_date} onChange={(e) => setRideForm({ ...rideForm, ride_date: e.target.value })} required /></div><div className="col-12"><button className="btn btn-primary" disabled={isBusy}>{isBusy ? 'Please wait...' : 'Create Ride'}</button></div></form></div><div className="card p-4"><h3>Find Rides by Date</h3><div className="d-flex gap-2 mb-3"><input type="date" className="form-control w-auto" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} /><button className="btn btn-outline-secondary" onClick={() => selectedDate && loadRidesByDate(selectedDate)}>Find Rides</button></div>{rides.length === 0 ? <p>No rides found for selected date.</p> : <div className="list-group">{rides.map((ride) => <div className="list-group-item" key={ride.id}><div className="d-flex justify-content-between flex-wrap gap-2"><div><strong>{ride.creator_name}</strong> going to <strong>{ride.place}</strong><div className="small text-muted">Roll: {ride.roll_number} | Phone: {ride.phone_number}</div></div><button className="btn btn-outline-primary btn-sm" disabled={ride.is_creator} onClick={() => requestToJoin(ride)}>{ride.is_creator ? 'Your Ride' : 'Request to Join'}</button></div><div className="mt-3"><strong>Join Requests:</strong>{ride.requests.length === 0 ? <p className="small text-muted mb-0">No requests yet.</p> : <ul className="mt-2 mb-0">{ride.requests.map((request) => <li key={request.id}>{request.requester_name} ({request.requester_phone}) - {request.status}{request.status === 'pending' && ride.is_creator && !request.is_mine && <button className="btn btn-success btn-sm ms-2" onClick={() => confirmRequest(ride, request)}>Approve</button>}</li>)}</ul>}</div></div>)}</div>}</div></section>;
+  }
+
+  function renderPage() {
+    if (page === 'login') return renderLogin();
+    if (page === 'register') return renderRegister();
+    if (page === 'dashboard') return renderDashboard();
+    if (page === 'profile') return renderProfile();
+    if (page === 'notifications') return renderNotifications();
+    if (page === 'share' || page === 'features') return renderShareRide();
+    if (page === 'about') return <section className="card p-4 my-4"><h2>About Us</h2><h3>Mission</h3><p>Make shared travel easier, safer, and more affordable for people going to the same place on the same date.</p><h3>Vision</h3><p>Build a trusted community where verified users can coordinate rides with confidence.</p></section>;
+    if (page === 'contact') return <section className="card p-4 my-4"><h2>Contact</h2><p><strong>Email:</strong> uk93542@gmail.com</p><p><strong>Phone:</strong> 8690214131</p><p><strong>Location:</strong> Ahmedabad, India</p></section>;
+    return renderHome();
+  }
+
+  return <><div>{renderNavbar()}</div><main className="container py-3">{isProductionApiMisconfigured && <div className="alert alert-warning">Frontend is deployed, but the backend API is still set to localhost. Set API_BASE_URL in Vercel to your Render backend URL.</div>}{message && <div className="alert alert-info">{message}</div>}{renderPage()}</main><footer className="border-top py-4 mt-5"><div className="container text-muted">Share Ride System © 2026</div></footer></>;
+}
