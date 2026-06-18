@@ -14,7 +14,7 @@ Beginner-friendly full-stack starter project for a **ride sharing system** with 
 3. Logged-in user creates a ride (for any date) with:
    - Name
    - Place option (`station` or `airport`)
-   - Roll number
+   - ID / booking reference / student roll number
    - Phone number
    - Ride date (supports YYYY-MM-DD and DD-MM-YYYY at API level)
 4. Users can view rides on the same date.
