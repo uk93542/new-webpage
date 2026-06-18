@@ -27,7 +27,7 @@ module.exports = {
   },
   plugins: [
     new webpack.DefinePlugin({
-      API_BASE_URL: JSON.stringify(process.env.API_BASE_URL || 'http://127.0.0.1:8000/api')
+      API_BASE_URL: JSON.stringify(process.env.API_BASE_URL || 'https://new-webpage-0c7f.onrender.com')
     }),
     new HtmlWebpackPlugin({
       template: './src/index.html'

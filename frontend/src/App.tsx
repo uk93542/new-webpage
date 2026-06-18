@@ -44,25 +44,45 @@ interface Ride {
 
 type Page = 'home' | 'features' | 'about' | 'contact' | 'login' | 'register' | 'dashboard' | 'profile' | 'notifications' | 'share';
 
-const API_BASE = API_BASE_URL.replace(/\/$/, '').endsWith('/api')
-  ? API_BASE_URL.replace(/\/$/, '')
-  : `${API_BASE_URL.replace(/\/$/, '')}/api`;
 const isBrowser = typeof window !== 'undefined';
+const RENDER_API_BASE_URL = 'https://new-webpage-0c7f.onrender.com';
+const HARDCODED_API_BASES = [`${RENDER_API_BASE_URL}/api`, RENDER_API_BASE_URL];
+const CONFIGURED_API_BASE_URL = API_BASE_URL.replace(/\/$/, '');
+const CONFIGURED_API_BASES = CONFIGURED_API_BASE_URL.endsWith('/api')
+  ? [CONFIGURED_API_BASE_URL, CONFIGURED_API_BASE_URL.replace(/\/api$/, '')]
+  : [`${CONFIGURED_API_BASE_URL}/api`, CONFIGURED_API_BASE_URL];
 const isLocalPage = isBrowser && ['localhost', '127.0.0.1'].includes(window.location.hostname);
-const isUsingLocalBackend = API_BASE.includes('127.0.0.1') || API_BASE.includes('localhost');
-const isProductionApiMisconfigured = isBrowser && !isLocalPage && isUsingLocalBackend;
+const isUsingLocalBackend = CONFIGURED_API_BASE_URL.includes('127.0.0.1') || CONFIGURED_API_BASE_URL.includes('localhost');
+const isUsingExampleBackend = CONFIGURED_API_BASE_URL.includes('api.example.com');
+const shouldPreferHardcodedBackend = isUsingExampleBackend || (isBrowser && !isLocalPage && isUsingLocalBackend);
+const API_BASES = Array.from(new Set(
+  shouldPreferHardcodedBackend
+    ? [...HARDCODED_API_BASES, ...CONFIGURED_API_BASES]
+    : [...CONFIGURED_API_BASES, ...HARDCODED_API_BASES],
+));
+const isProductionApiMisconfigured = isBrowser && !isLocalPage && (isUsingLocalBackend || isUsingExampleBackend);
+
+const VALID_PAGES: Page[] = ['home', 'features', 'about', 'contact', 'login', 'register', 'dashboard', 'profile', 'notifications', 'share'];
+
+function getInitialPage(): Page {
+  if (!isBrowser) return 'home';
+
+  const hashPage = window.location.hash.replace(/^#\/?/, '') as Page;
+  return VALID_PAGES.includes(hashPage) ? hashPage : 'home';
+}
+
 
 async function readErrorMessage(response: Response): Promise<string> {
   try {
     const data = await response.json();
-    return data.error || `Request failed with status ${response.status}.`;
+    return data.error || `Request failed with status ${response.status} at ${response.url}.`;
   } catch {
-    return `Request failed with status ${response.status}. Check Render logs for the exact backend path/error.`;
+    return `Request failed with status ${response.status} at ${response.url}. Check Render web-service logs (not only PostgreSQL logs) for the exact backend path/error.`;
   }
 }
 
 export default function App() {
-  const [page, setPage] = useState<Page>('home');
+  const [page, setPage] = useState<Page>(getInitialPage);
   const [token, setToken] = useState(() => window.localStorage.getItem('shareRideToken') || '');
   const [user, setUser] = useState<User | null>(null);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -82,6 +102,24 @@ export default function App() {
   const [selectedDate, setSelectedDate] = useState('');
   const [rides, setRides] = useState<Ride[]>([]);
 
+  function navigate(nextPage: Page) {
+    setPage(nextPage);
+    if (isBrowser) {
+      window.location.hash = nextPage === 'home' ? '' : nextPage;
+    }
+  }
+
+  useEffect(() => {
+    if (!isBrowser) return undefined;
+
+    function syncPageFromHash() {
+      setPage(getInitialPage());
+    }
+
+    window.addEventListener('hashchange', syncPageFromHash);
+    return () => window.removeEventListener('hashchange', syncPageFromHash);
+  }, []);
+
   useEffect(() => {
     if (token) {
       loadMe(token);
@@ -93,24 +131,36 @@ export default function App() {
     if (selectedDate) loadRidesByDate(selectedDate, { showStatus: false });
   }, [selectedDate, token]);
 
-  function authHeaders() {
+  function authHeaders(): Record<string, string> {
     return token ? { Authorization: `Bearer ${token}` } : {};
   }
 
   async function apiFetch(path: string, options: RequestInit = {}) {
-    return fetch(`${API_BASE}${path}`, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...authHeaders(),
-        ...(options.headers || {}),
-      },
-    });
+    const headers = {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+      ...(options.headers as Record<string, string> | undefined),
+    };
+
+    let lastResponse: Response | null = null;
+    let lastNetworkError: unknown = null;
+    for (const baseUrl of API_BASES) {
+      try {
+        const response = await fetch(`${baseUrl}${path}`, { ...options, headers });
+        lastResponse = response;
+        if (response.status !== 404) return response;
+      } catch (error) {
+        lastNetworkError = error;
+      }
+    }
+
+    if (lastResponse) return lastResponse;
+    throw lastNetworkError;
   }
 
   async function loadMe(activeToken = token) {
     if (!activeToken) return;
-    const response = await fetch(`${API_BASE}/auth/me/`, { headers: { Authorization: `Bearer ${activeToken}` } });
+    const response = await apiFetch('/auth/me/', { headers: { Authorization: `Bearer ${activeToken}` } });
     if (response.ok) {
       const data = await response.json();
       setUser(data.user);
@@ -119,7 +169,7 @@ export default function App() {
 
   async function loadNotifications(activeToken = token) {
     if (!activeToken) return;
-    const response = await fetch(`${API_BASE}/notifications/`, { headers: { Authorization: `Bearer ${activeToken}` } });
+    const response = await apiFetch('/notifications/', { headers: { Authorization: `Bearer ${activeToken}` } });
     if (response.ok) {
       const data = await response.json();
       setNotifications(data.notifications || []);
@@ -140,7 +190,7 @@ export default function App() {
     setToken(data.token);
     setUser(data.user);
     setMessage('Login successful. Welcome to your dashboard.');
-    setPage('dashboard');
+    navigate('dashboard');
   }
 
   async function handleRegister(e: React.FormEvent) {
@@ -153,7 +203,7 @@ export default function App() {
       return;
     }
     setMessage('Registration successful. You can now login using your email and password.');
-    setPage('login');
+    navigate('login');
   }
 
   function logout() {
@@ -161,7 +211,7 @@ export default function App() {
     setToken('');
     setUser(null);
     setNotifications([]);
-    setPage('home');
+    navigate('home');
     setMessage('Logged out.');
   }
 
@@ -183,7 +233,7 @@ export default function App() {
     e.preventDefault();
     if (!token) {
       setMessage('Please login before creating a ride.');
-      setPage('login');
+      navigate('login');
       return;
     }
     setIsBusy(true);
@@ -201,7 +251,7 @@ export default function App() {
   async function requestToJoin(ride: Ride) {
     if (!token) {
       setMessage('Please login before requesting to join a ride.');
-      setPage('login');
+      navigate('login');
       return;
     }
     if (ride.is_creator) {
@@ -243,20 +293,20 @@ export default function App() {
     return (
       <nav className="navbar navbar-expand-lg bg-white border-bottom sticky-top">
         <div className="container">
-          <button className="navbar-brand btn btn-link text-decoration-none fw-bold" onClick={() => setPage('home')}>Share Ride</button>
+          <button className="navbar-brand btn btn-link text-decoration-none fw-bold" onClick={() => navigate('home')}>Share Ride</button>
           <div className="d-flex flex-wrap gap-2">
-            <button className="btn btn-link" onClick={() => setPage('features')}>Features</button>
-            <button className="btn btn-link" onClick={() => setPage('about')}>About</button>
-            <button className="btn btn-link" onClick={() => setPage('contact')}>Contact</button>
+            <button className="btn btn-link" onClick={() => navigate('features')}>Features</button>
+            <button className="btn btn-link" onClick={() => navigate('about')}>About</button>
+            <button className="btn btn-link" onClick={() => navigate('contact')}>Contact</button>
             {user ? (
               <>
-                <button className="btn btn-outline-primary" onClick={() => setPage('dashboard')}>Dashboard</button>
+                <button className="btn btn-outline-primary" onClick={() => navigate('dashboard')}>Dashboard</button>
                 <button className="btn btn-outline-secondary" onClick={logout}>Logout</button>
               </>
             ) : (
               <>
-                <button className="btn btn-outline-primary" onClick={() => setPage('login')}>Login</button>
-                <button className="btn btn-primary" onClick={() => setPage('register')}>Register</button>
+                <button className="btn btn-outline-primary" onClick={() => navigate('login')}>Login</button>
+                <button className="btn btn-primary" onClick={() => navigate('register')}>Register</button>
               </>
             )}
           </div>
@@ -271,21 +321,35 @@ export default function App() {
         <section className="p-5 bg-light rounded-3 my-4">
           <h1 className="display-5 fw-bold">Share rides safely with verified students and passengers.</h1>
           <p className="lead">Login first, create a ride, find people going on the same date, and request to share.</p>
-          <button className="btn btn-primary btn-lg me-2" onClick={() => setPage(user ? 'share' : 'login')}>Start Sharing</button>
-          <button className="btn btn-outline-secondary btn-lg" onClick={() => setPage('register')}>Create Account</button>
+          <button className="btn btn-primary btn-lg me-2" onClick={() => navigate(user ? 'share' : 'login')}>Start Sharing</button>
+          <button className="btn btn-outline-secondary btn-lg" onClick={() => navigate('register')}>Create Account</button>
         </section>
         <section className="row g-3 my-4">
           <div className="col-md-4"><div className="card h-100 p-3"><h3>Problem Statement</h3><p>Travelers often go to the same station or airport but cannot easily find trusted ride partners.</p></div></div>
           <div className="col-md-4"><div className="card h-100 p-3"><h3>Features</h3><p>Verified registration, ride matching by date, join requests, dashboard notifications, and approval control.</p></div></div>
           <div className="col-md-4"><div className="card h-100 p-3"><h3>How It Works</h3><p>Register, login, create or find a ride, request to join, and wait for the ride creator to approve.</p></div></div>
         </section>
-        <section className="text-center my-5"><h2>Ready to save money and travel together?</h2><button className="btn btn-success" onClick={() => setPage(user ? 'share' : 'login')}>Go to Share My Ride</button></section>
+        <section className="text-center my-5"><h2>Ready to save money and travel together?</h2><button className="btn btn-success" onClick={() => navigate(user ? 'share' : 'login')}>Go to Share My Ride</button></section>
       </>
     );
   }
 
+
+  function renderFeatures() {
+    return (
+      <section className="my-4">
+        <h2>Features</h2>
+        <div className="row g-3">
+          <div className="col-md-4"><div className="card h-100 p-3"><h3>Verified Accounts</h3><p>Passengers register before creating rides or asking to join someone else's ride.</p></div></div>
+          <div className="col-md-4"><div className="card h-100 p-3"><h3>Same-Date Matching</h3><p>Find other travelers going to the station or airport on the same ride date.</p></div></div>
+          <div className="col-md-4"><div className="card h-100 p-3"><h3>Approval Workflow</h3><p>Ride creators review join requests before sharing the ride coordination details.</p></div></div>
+        </div>
+      </section>
+    );
+  }
+
   function renderLogin() {
-    return <section className="card p-4 my-4"><h2>Login</h2><form onSubmit={handleLogin} className="row g-3"><div className="col-md-6"><label className="form-label">Email</label><input className="form-control" type="email" value={loginForm.email} onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })} required /></div><div className="col-md-6"><label className="form-label">Password</label><input className="form-control" type="password" value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} required /></div><div><button className="btn btn-primary" disabled={isBusy}>{isBusy ? 'Please wait...' : 'Login'}</button><button type="button" className="btn btn-link" onClick={() => setPage('register')}>Need an account? Register</button></div></form></section>;
+    return <section className="card p-4 my-4"><h2>Login</h2><form onSubmit={handleLogin} className="row g-3"><div className="col-md-6"><label className="form-label">Email</label><input className="form-control" type="email" value={loginForm.email} onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })} required /></div><div className="col-md-6"><label className="form-label">Password</label><input className="form-control" type="password" value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} required /></div><div><button className="btn btn-primary" disabled={isBusy}>{isBusy ? 'Please wait...' : 'Login'}</button><button type="button" className="btn btn-link" onClick={() => navigate('register')}>Need an account? Register</button></div></form></section>;
   }
 
   function renderRegister() {
@@ -294,7 +358,7 @@ export default function App() {
 
   function renderDashboard() {
     if (!user) return renderLogin();
-    return <section className="my-4"><h2>Dashboard</h2><p>Welcome, {user.name}. Use the dashboard links below.</p><div className="row g-3"><div className="col-md-4"><button className="card p-4 w-100 text-start" onClick={() => setPage('share')}><h3>Share My Ride</h3><p>Create rides and approve requests.</p></button></div><div className="col-md-4"><button className="card p-4 w-100 text-start" onClick={() => setPage('profile')}><h3>Profile</h3><p>View your registered details.</p></button></div><div className="col-md-4"><button className="card p-4 w-100 text-start" onClick={() => { loadNotifications(); setPage('notifications'); }}><h3>Notifications</h3><p>{notifications.length} recent notification(s).</p></button></div></div></section>;
+    return <section className="my-4"><h2>Dashboard</h2><p>Welcome, {user.name}. Use the dashboard links below.</p><div className="row g-3"><div className="col-md-4"><button className="card p-4 w-100 text-start" onClick={() => navigate('share')}><h3>Share My Ride</h3><p>Create rides and approve requests.</p></button></div><div className="col-md-4"><button className="card p-4 w-100 text-start" onClick={() => navigate('profile')}><h3>Profile</h3><p>View your registered details.</p></button></div><div className="col-md-4"><button className="card p-4 w-100 text-start" onClick={() => { loadNotifications(); navigate('notifications'); }}><h3>Notifications</h3><p>{notifications.length} recent notification(s).</p></button></div></div></section>;
   }
 
   function renderProfile() {
@@ -309,7 +373,7 @@ export default function App() {
 
   function renderShareRide() {
     if (!user) return renderLogin();
-    return <section className="my-4"><h2>Share My Ride</h2><div className="card p-4 mb-4"><h3>Create a Ride</h3><form className="row g-3" onSubmit={createRide}><div className="col-md-4"><label className="form-label">Place</label><select className="form-select" value={rideForm.place} onChange={(e) => setRideForm({ ...rideForm, place: e.target.value })}><option value="station">Station</option><option value="airport">Airport</option></select></div><div className="col-md-4"><label className="form-label">Roll Number</label><input className="form-control" value={rideForm.roll_number} onChange={(e) => setRideForm({ ...rideForm, roll_number: e.target.value })} required /></div><div className="col-md-4"><label className="form-label">Phone Number</label><input className="form-control" value={rideForm.phone_number} onChange={(e) => setRideForm({ ...rideForm, phone_number: e.target.value })} required /></div><div className="col-md-4"><label className="form-label">Ride Date</label><input type="date" className="form-control" value={rideForm.ride_date} onChange={(e) => setRideForm({ ...rideForm, ride_date: e.target.value })} required /></div><div className="col-12"><button className="btn btn-primary" disabled={isBusy}>{isBusy ? 'Please wait...' : 'Create Ride'}</button></div></form></div><div className="card p-4"><h3>Find Rides by Date</h3><div className="d-flex gap-2 mb-3"><input type="date" className="form-control w-auto" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} /><button className="btn btn-outline-secondary" onClick={() => selectedDate && loadRidesByDate(selectedDate)}>Find Rides</button></div>{rides.length === 0 ? <p>No rides found for selected date.</p> : <div className="list-group">{rides.map((ride) => <div className="list-group-item" key={ride.id}><div className="d-flex justify-content-between flex-wrap gap-2"><div><strong>{ride.creator_name}</strong> going to <strong>{ride.place}</strong><div className="small text-muted">Roll: {ride.roll_number} | Phone: {ride.phone_number}</div></div><button className="btn btn-outline-primary btn-sm" disabled={ride.is_creator} onClick={() => requestToJoin(ride)}>{ride.is_creator ? 'Your Ride' : 'Request to Join'}</button></div><div className="mt-3"><strong>Join Requests:</strong>{ride.requests.length === 0 ? <p className="small text-muted mb-0">No requests yet.</p> : <ul className="mt-2 mb-0">{ride.requests.map((request) => <li key={request.id}>{request.requester_name} ({request.requester_phone}) - {request.status}{request.status === 'pending' && ride.is_creator && !request.is_mine && <button className="btn btn-success btn-sm ms-2" onClick={() => confirmRequest(ride, request)}>Approve</button>}</li>)}</ul>}</div></div>)}</div>}</div></section>;
+    return <section className="my-4"><h2>Share My Ride</h2><div className="card p-4 mb-4"><h3>Create a Ride</h3><form className="row g-3" onSubmit={createRide}><div className="col-md-4"><label className="form-label">Place</label><select className="form-select" value={rideForm.place} onChange={(e) => setRideForm({ ...rideForm, place: e.target.value })}><option value="station">Station</option><option value="airport">Airport</option></select></div><div className="col-md-4"><label className="form-label">ID / Booking Reference / Student Roll No.</label><input className="form-control" value={rideForm.roll_number} onChange={(e) => setRideForm({ ...rideForm, roll_number: e.target.value })} required /></div><div className="col-md-4"><label className="form-label">Phone Number</label><input className="form-control" value={rideForm.phone_number} onChange={(e) => setRideForm({ ...rideForm, phone_number: e.target.value })} required /></div><div className="col-md-4"><label className="form-label">Ride Date</label><input type="date" className="form-control" value={rideForm.ride_date} onChange={(e) => setRideForm({ ...rideForm, ride_date: e.target.value })} required /></div><div className="col-12"><button className="btn btn-primary" disabled={isBusy}>{isBusy ? 'Please wait...' : 'Create Ride'}</button></div></form></div><div className="card p-4"><h3>Find Rides by Date</h3><div className="d-flex gap-2 mb-3"><input type="date" className="form-control w-auto" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} /><button className="btn btn-outline-secondary" onClick={() => selectedDate && loadRidesByDate(selectedDate)}>Find Rides</button></div>{rides.length === 0 ? <p>No rides found for selected date.</p> : <div className="list-group">{rides.map((ride) => <div className="list-group-item" key={ride.id}><div className="d-flex justify-content-between flex-wrap gap-2"><div><strong>{ride.creator_name}</strong> going to <strong>{ride.place}</strong><div className="small text-muted">ID / Booking Ref: {ride.roll_number} | Phone: {ride.phone_number}</div></div><button className="btn btn-outline-primary btn-sm" disabled={ride.is_creator} onClick={() => requestToJoin(ride)}>{ride.is_creator ? 'Your Ride' : 'Request to Join'}</button></div><div className="mt-3"><strong>Join Requests:</strong>{ride.requests.length === 0 ? <p className="small text-muted mb-0">No requests yet.</p> : <ul className="mt-2 mb-0">{ride.requests.map((request) => <li key={request.id}>{request.requester_name} ({request.requester_phone}) - {request.status}{request.status === 'pending' && ride.is_creator && !request.is_mine && <button className="btn btn-success btn-sm ms-2" onClick={() => confirmRequest(ride, request)}>Approve</button>}</li>)}</ul>}</div></div>)}</div>}</div></section>;
   }
 
   function renderPage() {
@@ -318,7 +382,8 @@ export default function App() {
     if (page === 'dashboard') return renderDashboard();
     if (page === 'profile') return renderProfile();
     if (page === 'notifications') return renderNotifications();
-    if (page === 'share' || page === 'features') return renderShareRide();
+    if (page === 'share') return renderShareRide();
+    if (page === 'features') return renderFeatures();
     if (page === 'about') return <section className="card p-4 my-4"><h2>About Us</h2><h3>Mission</h3><p>Make shared travel easier, safer, and more affordable for people going to the same place on the same date.</p><h3>Vision</h3><p>Build a trusted community where verified users can coordinate rides with confidence.</p></section>;
     if (page === 'contact') return <section className="card p-4 my-4"><h2>Contact</h2><p><strong>Email:</strong> uk93542@gmail.com</p><p><strong>Phone:</strong> 8690214131</p><p><strong>Location:</strong> Ahmedabad, India</p></section>;
     return renderHome();

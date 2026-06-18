@@ -14,4 +14,7 @@ urlpatterns = [
     path('health/', health_check, name='health-check-alt'),
     path('admin/', admin.site.urls),
     path('api/', include('rides.urls')),
+    # Root API aliases keep older frontend deployments working if API_BASE_URL was
+    # configured without /api or before the frontend normalization was added.
+    path('', include('rides.urls')),
 ]
