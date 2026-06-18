@@ -11,7 +11,7 @@ from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
-from .models import JoinRequest, Notification, Ride, SessionToken, UserProfile
+from .models import JoinRequest, Notification, Ride, RideChatMessage, SessionToken, UserProfile
 from .services import notify_all_registered_for_date, send_confirmation_notifications
 
 logger = logging.getLogger(__name__)
@@ -93,6 +93,8 @@ def _serialize_ride(ride: Ride, current_user: User | None = None) -> dict:
         'creator_user_id': ride.creator_user_id,
         'creator_name': ride.creator_name,
         'place': ride.place,
+        'from_address': ride.from_address,
+        'to_address': ride.to_address,
         'roll_number': ride.roll_number,
         'phone_number': ride.phone_number,
         'ride_date': str(ride.ride_date),
@@ -216,6 +218,8 @@ def create_ride(request: HttpRequest) -> JsonResponse:
             creator_user=user,
             creator_name=user.get_full_name() or user.email,
             place=payload['place'],
+            from_address=payload['from_address'].strip(),
+            to_address=payload['to_address'].strip(),
             roll_number=payload['roll_number'],
             phone_number=payload['phone_number'],
             ride_date=ride_date,
@@ -261,8 +265,8 @@ def create_join_request(request: HttpRequest, ride_id: int) -> JsonResponse:
         if ride.creator_user:
             Notification.objects.create(
                 user=ride.creator_user,
-                title='New ride share request',
-                message=f'{join_request.requester_name} requested to join your {ride.place} ride on {ride.ride_date}.',
+                title='Someone new joined your ride requests',
+                message=f'{join_request.requester_name} requested to join your {ride.place} ride from {ride.from_address} to {ride.to_address} on {ride.ride_date}.',
             )
     except KeyError as exc:
         return JsonResponse({'error': f'Missing field: {exc.args[0]}'}, status=400)
@@ -304,7 +308,7 @@ def confirm_join_request(request: HttpRequest, ride_id: int, request_id: int) ->
         Notification.objects.create(
             user=join_request.requester_user,
             title='Ride request accepted',
-            message=f'Your request to join {ride.creator_name}\'s {ride.place} ride on {ride.ride_date} was accepted.',
+            message=f'Your request to join {ride.creator_name}\'s {ride.place} ride from {ride.from_address} to {ride.to_address} on {ride.ride_date} was accepted.',
         )
 
     same_day_rides = Ride.objects.filter(ride_date=ride.ride_date).prefetch_related('requests')
@@ -318,3 +322,71 @@ def confirm_join_request(request: HttpRequest, ride_id: int, request_id: int) ->
     logger.info('Join request confirmed: ride_id=%s request_id=%s notified_phone_count=%s', ride.id, join_request.id, len(set(phone_numbers)))
 
     return JsonResponse({'request': _serialize_request(join_request, user)})
+
+
+@csrf_exempt
+@require_POST
+def reject_join_request(request: HttpRequest, ride_id: int, request_id: int) -> JsonResponse:
+    user, error = _require_user(request)
+    if error:
+        return error
+
+    ride = get_object_or_404(Ride, id=ride_id)
+    join_request = get_object_or_404(JoinRequest, id=request_id, ride=ride)
+
+    if ride.creator_user_id != user.id:
+        return JsonResponse({'error': 'Only the ride creator can deny requests for this ride.'}, status=403)
+
+    join_request.status = 'rejected'
+    join_request.save(update_fields=['status'])
+
+    if join_request.requester_user:
+        Notification.objects.create(
+            user=join_request.requester_user,
+            title='Ride request denied',
+            message=f'Your request to join {ride.creator_name}\'s {ride.place} ride on {ride.ride_date} was denied.',
+        )
+    if ride.creator_user:
+        Notification.objects.create(
+            user=ride.creator_user,
+            title='Someone left your ride queue',
+            message=f'{join_request.requester_name} is no longer pending for your ride on {ride.ride_date}.',
+        )
+
+    return JsonResponse({'request': _serialize_request(join_request, user)})
+
+
+def _serialize_chat_message(message: RideChatMessage) -> dict:
+    return {
+        'id': message.id,
+        'sender_name': message.sender_name,
+        'message': message.message,
+        'created_at': message.created_at.isoformat(),
+    }
+
+
+@csrf_exempt
+def ride_chat(request: HttpRequest, ride_id: int) -> JsonResponse:
+    user, error = _require_user(request)
+    if error:
+        return error
+
+    ride = get_object_or_404(Ride, id=ride_id)
+    has_access = ride.creator_user_id == user.id or JoinRequest.objects.filter(ride=ride, requester_user=user, status='accepted').exists()
+    if not has_access:
+        return JsonResponse({'error': 'Only the ride creator and accepted members can use this ride chat.'}, status=403)
+
+    if request.method == 'POST':
+        payload = _payload(request)
+        text = payload.get('message', '').strip()
+        if not text:
+            return JsonResponse({'error': 'Message cannot be empty.'}, status=400)
+        RideChatMessage.objects.create(
+            ride=ride,
+            sender_user=user,
+            sender_name=user.get_full_name() or user.email,
+            message=text,
+        )
+
+    messages = ride.chat_messages.order_by('created_at')[:100]
+    return JsonResponse({'messages': [_serialize_chat_message(message) for message in messages]})

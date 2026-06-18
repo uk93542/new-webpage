@@ -10,4 +10,6 @@ urlpatterns = [
     path('rides/create/', views.create_ride, name='create-ride'),
     path('rides/<int:ride_id>/request/', views.create_join_request, name='create-join-request'),
     path('rides/<int:ride_id>/requests/<int:request_id>/confirm/', views.confirm_join_request, name='confirm-join-request'),
+    path('rides/<int:ride_id>/requests/<int:request_id>/reject/', views.reject_join_request, name='reject-join-request'),
+    path('rides/<int:ride_id>/chat/', views.ride_chat, name='ride-chat'),
 ]
