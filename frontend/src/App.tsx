@@ -35,6 +35,8 @@ interface Ride {
   creator_user_id: number | null;
   creator_name: string;
   place: 'station' | 'airport';
+  from_address: string;
+  to_address: string;
   roll_number: string;
   phone_number: string;
   ride_date: string;
@@ -43,6 +45,14 @@ interface Ride {
 }
 
 type Page = 'home' | 'features' | 'about' | 'contact' | 'login' | 'register' | 'dashboard' | 'profile' | 'notifications' | 'share';
+type ShareTab = 'create' | 'status' | 'chat';
+
+interface ChatMessage {
+  id: number;
+  sender_name: string;
+  message: string;
+  created_at: string;
+}
 
 const isBrowser = typeof window !== 'undefined';
 const RENDER_API_BASE_URL = 'https://new-webpage-0c7f.onrender.com';
@@ -63,6 +73,7 @@ const API_BASES = Array.from(new Set(
 const isProductionApiMisconfigured = isBrowser && !isLocalPage && (isUsingLocalBackend || isUsingExampleBackend);
 
 const VALID_PAGES: Page[] = ['home', 'features', 'about', 'contact', 'login', 'register', 'dashboard', 'profile', 'notifications', 'share'];
+const SURATHKAL_LOCATIONS = ['NITK Main Gate', 'NITK Surathkal Campus', 'Surathkal Railway Station', 'Surathkal Bus Stand', 'Surathkal Market', 'NITK Beach', 'Srinivasnagar', 'KREC Junction', 'Mukha Main Road', 'Mangalore International Airport', 'Mangalore Central Railway Station', 'Mangalore Junction Railway Station', 'KSRTC Bus Stand Bejai', 'Panambur Beach', 'Tannirbhavi Beach', 'Other'];
 
 function getInitialPage(): Page {
   if (!isBrowser) return 'home';
@@ -98,9 +109,13 @@ export default function App() {
     gov_id_number: '',
     password: '',
   });
-  const [rideForm, setRideForm] = useState({ place: 'station', roll_number: '', phone_number: '', ride_date: '' });
+  const [rideForm, setRideForm] = useState({ place: 'station', from_address: '', from_other: '', to_address: '', to_other: '', roll_number: '', phone_number: '', ride_date: '' });
   const [selectedDate, setSelectedDate] = useState('');
   const [rides, setRides] = useState<Ride[]>([]);
+  const [shareTab, setShareTab] = useState<ShareTab>('create');
+  const [chatRideId, setChatRideId] = useState<number | ''>('');
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatText, setChatText] = useState('');
 
   function navigate(nextPage: Page) {
     setPage(nextPage);
@@ -130,6 +145,12 @@ export default function App() {
   useEffect(() => {
     if (selectedDate) loadRidesByDate(selectedDate, { showStatus: false });
   }, [selectedDate, token]);
+
+  useEffect(() => {
+    if (!message) return undefined;
+    const timeoutId = window.setTimeout(() => setMessage(''), 5000);
+    return () => window.clearTimeout(timeoutId);
+  }, [message]);
 
   function authHeaders(): Record<string, string> {
     return token ? { Authorization: `Bearer ${token}` } : {};
@@ -237,7 +258,7 @@ export default function App() {
       return;
     }
     setIsBusy(true);
-    const response = await apiFetch('/rides/create/', { method: 'POST', body: JSON.stringify(rideForm) });
+    const response = await apiFetch('/rides/create/', { method: 'POST', body: JSON.stringify({ ...rideForm, from_address: rideForm.from_address === 'Other' ? rideForm.from_other : rideForm.from_address, to_address: rideForm.to_address === 'Other' ? rideForm.to_other : rideForm.to_address }) });
     setIsBusy(false);
     if (!response.ok) {
       setMessage(`Could not create ride: ${await readErrorMessage(response)}`);
@@ -270,23 +291,41 @@ export default function App() {
     if (selectedDate) await loadRidesByDate(selectedDate, { showStatus: false });
   }
 
-  async function confirmRequest(ride: Ride, request: JoinRequest) {
+  async function updateRequestStatus(ride: Ride, request: JoinRequest, action: 'confirm' | 'reject') {
     if (!ride.is_creator) {
-      setMessage('Only the ride creator can approve this request.');
+      setMessage('Only the ride creator can update this request.');
       return;
     }
-    if (request.is_mine) {
-      setMessage('You cannot approve your own request.');
-      return;
-    }
-    const response = await apiFetch(`/rides/${ride.id}/requests/${request.id}/confirm/`, { method: 'POST' });
+    const response = await apiFetch(`/rides/${ride.id}/requests/${request.id}/${action}/`, { method: 'POST' });
     if (!response.ok) {
       setMessage(await readErrorMessage(response));
       return;
     }
-    setMessage('Request approved. Dashboard notification and notification hooks were triggered.');
+    setMessage(action === 'confirm' ? 'Request approved. Notifications were sent.' : 'Request denied. The requester was notified.');
     await loadNotifications();
     if (selectedDate) await loadRidesByDate(selectedDate, { showStatus: false });
+  }
+
+  async function loadChat(rideId: number) {
+    const response = await apiFetch(`/rides/${rideId}/chat/`);
+    if (response.ok) {
+      const data = await response.json();
+      setChatMessages(data.messages || []);
+    } else {
+      setMessage(await readErrorMessage(response));
+    }
+  }
+
+  async function sendChat(e: React.FormEvent) {
+    e.preventDefault();
+    if (!chatRideId || !chatText.trim()) return;
+    const response = await apiFetch(`/rides/${chatRideId}/chat/`, { method: 'POST', body: JSON.stringify({ message: chatText }) });
+    if (!response.ok) {
+      setMessage(await readErrorMessage(response));
+      return;
+    }
+    setChatText('');
+    await loadChat(chatRideId);
   }
 
   function renderNavbar() {
@@ -358,7 +397,7 @@ export default function App() {
 
   function renderDashboard() {
     if (!user) return renderLogin();
-    return <section className="my-4"><h2>Dashboard</h2><p>Welcome, {user.name}. Use the dashboard links below.</p><div className="row g-3"><div className="col-md-4"><button className="card p-4 w-100 text-start" onClick={() => navigate('share')}><h3>Share My Ride</h3><p>Create rides and approve requests.</p></button></div><div className="col-md-4"><button className="card p-4 w-100 text-start" onClick={() => navigate('profile')}><h3>Profile</h3><p>View your registered details.</p></button></div><div className="col-md-4"><button className="card p-4 w-100 text-start" onClick={() => { loadNotifications(); navigate('notifications'); }}><h3>Notifications</h3><p>{notifications.length} recent notification(s).</p></button></div></div></section>;
+    return <section className="my-4"><h2>Dashboard</h2><p>Welcome, {user.name}. Use the dashboard links below.</p><div className="row g-3"><div className="col-md-4"><button className="card p-4 w-100 text-start" onClick={() => { setShareTab('create'); navigate('share'); }}><h3>Share My Ride</h3><p>Create rides and approve requests.</p></button></div><div className="col-md-4"><button className="card p-4 w-100 text-start" onClick={() => { setShareTab('status'); navigate('share'); }}><h3>Status</h3><p>Track approvals, denials, pending requests, and ride members.</p></button></div><div className="col-md-4"><button className="card p-4 w-100 text-start" onClick={() => { setShareTab('chat'); navigate('share'); }}><h3>Get to Know</h3><p>Open ride-based group chats.</p></button></div><div className="col-md-4"><button className="card p-4 w-100 text-start" onClick={() => navigate('profile')}><h3>Profile</h3><p>View your registered details.</p></button></div><div className="col-md-4"><button className="card p-4 w-100 text-start" onClick={() => { loadNotifications(); navigate('notifications'); }}><h3>Notifications</h3><p>{notifications.length} recent notification(s).</p></button></div></div></section>;
   }
 
   function renderProfile() {
@@ -371,9 +410,17 @@ export default function App() {
     return <section className="card p-4 my-4"><h2>Notifications</h2>{notifications.length === 0 ? <p>No notifications yet.</p> : <ul className="list-group">{notifications.map((item) => <li className="list-group-item" key={item.id}><strong>{item.title}</strong><p className="mb-0">{item.message}</p><small>{new Date(item.created_at).toLocaleString()}</small></li>)}</ul>}</section>;
   }
 
+  function renderLocationSelect(field: 'from_address' | 'to_address', otherField: 'from_other' | 'to_other', label: string) {
+    return <div className="col-md-4"><label className="form-label">{label}</label><select className="form-select" value={rideForm[field]} onChange={(e) => setRideForm({ ...rideForm, [field]: e.target.value })} required><option value="">Select a Surathkal/Mangalore location</option>{SURATHKAL_LOCATIONS.map((location) => <option key={location} value={location}>{location}</option>)}</select>{rideForm[field] === 'Other' && <input className="form-control mt-2" placeholder={`Enter ${label.toLowerCase()}`} value={rideForm[otherField]} onChange={(e) => setRideForm({ ...rideForm, [otherField]: e.target.value })} required />}</div>;
+  }
+
+  function renderRideList(showActions = true) {
+    return rides.length === 0 ? <p>No rides found for selected date.</p> : <div className="list-group">{rides.map((ride, index) => <div className="list-group-item" key={ride.id}><div className="d-flex justify-content-between flex-wrap gap-2"><div><strong>sharedride{index + 1}: {ride.creator_name}</strong><div>From <strong>{ride.from_address}</strong> to <strong>{ride.to_address}</strong> ({ride.place})</div><div className="small text-muted">ID / Booking Ref: {ride.roll_number} | Phone: {ride.phone_number}</div></div>{showActions && <button className="btn btn-outline-primary btn-sm" disabled={ride.is_creator} onClick={() => requestToJoin(ride)}>{ride.is_creator ? 'Your Ride' : 'Request to Join'}</button>}</div><div className="mt-3"><strong>Status / Join Requests:</strong>{ride.requests.length === 0 ? <p className="small text-muted mb-0">No requests yet. Approvers see requester profile names here until action is taken.</p> : <ul className="mt-2 mb-0">{ride.requests.map((request) => <li key={request.id}>{request.requester_name} ({request.requester_phone}) - <span className={`badge ${request.status === 'accepted' ? 'text-bg-success' : request.status === 'rejected' ? 'text-bg-danger' : 'text-bg-warning'}`}>{request.status}</span>{request.status === 'pending' && ride.is_creator && !request.is_mine && <><button className="btn btn-success btn-sm ms-2" onClick={() => updateRequestStatus(ride, request, 'confirm')}>Approve</button><button className="btn btn-outline-danger btn-sm ms-2" onClick={() => updateRequestStatus(ride, request, 'reject')}>Deny</button></>}</li>)}</ul>}</div></div>)}</div>;
+  }
+
   function renderShareRide() {
     if (!user) return renderLogin();
-    return <section className="my-4"><h2>Share My Ride</h2><div className="card p-4 mb-4"><h3>Create a Ride</h3><form className="row g-3" onSubmit={createRide}><div className="col-md-4"><label className="form-label">Place</label><select className="form-select" value={rideForm.place} onChange={(e) => setRideForm({ ...rideForm, place: e.target.value })}><option value="station">Station</option><option value="airport">Airport</option></select></div><div className="col-md-4"><label className="form-label">ID / Booking Reference / Student Roll No.</label><input className="form-control" value={rideForm.roll_number} onChange={(e) => setRideForm({ ...rideForm, roll_number: e.target.value })} required /></div><div className="col-md-4"><label className="form-label">Phone Number</label><input className="form-control" value={rideForm.phone_number} onChange={(e) => setRideForm({ ...rideForm, phone_number: e.target.value })} required /></div><div className="col-md-4"><label className="form-label">Ride Date</label><input type="date" className="form-control" value={rideForm.ride_date} onChange={(e) => setRideForm({ ...rideForm, ride_date: e.target.value })} required /></div><div className="col-12"><button className="btn btn-primary" disabled={isBusy}>{isBusy ? 'Please wait...' : 'Create Ride'}</button></div></form></div><div className="card p-4"><h3>Find Rides by Date</h3><div className="d-flex gap-2 mb-3"><input type="date" className="form-control w-auto" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} /><button className="btn btn-outline-secondary" onClick={() => selectedDate && loadRidesByDate(selectedDate)}>Find Rides</button></div>{rides.length === 0 ? <p>No rides found for selected date.</p> : <div className="list-group">{rides.map((ride) => <div className="list-group-item" key={ride.id}><div className="d-flex justify-content-between flex-wrap gap-2"><div><strong>{ride.creator_name}</strong> going to <strong>{ride.place}</strong><div className="small text-muted">ID / Booking Ref: {ride.roll_number} | Phone: {ride.phone_number}</div></div><button className="btn btn-outline-primary btn-sm" disabled={ride.is_creator} onClick={() => requestToJoin(ride)}>{ride.is_creator ? 'Your Ride' : 'Request to Join'}</button></div><div className="mt-3"><strong>Join Requests:</strong>{ride.requests.length === 0 ? <p className="small text-muted mb-0">No requests yet.</p> : <ul className="mt-2 mb-0">{ride.requests.map((request) => <li key={request.id}>{request.requester_name} ({request.requester_phone}) - {request.status}{request.status === 'pending' && ride.is_creator && !request.is_mine && <button className="btn btn-success btn-sm ms-2" onClick={() => confirmRequest(ride, request)}>Approve</button>}</li>)}</ul>}</div></div>)}</div>}</div></section>;
+    return <section className="my-4"><h2>Share My Ride</h2><div className="btn-group mb-3"><button className={`btn ${shareTab === 'create' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => setShareTab('create')}>Create a Ride</button><button className={`btn ${shareTab === 'status' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => setShareTab('status')}>Status</button><button className={`btn ${shareTab === 'chat' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => setShareTab('chat')}>Get to Know</button></div>{shareTab === 'create' && <div className="card p-4 mb-4"><h3>Create a Ride</h3><form className="row g-3" onSubmit={createRide}><div className="col-md-4"><label className="form-label">Place</label><select className="form-select" value={rideForm.place} onChange={(e) => setRideForm({ ...rideForm, place: e.target.value })}><option value="station">Station</option><option value="airport">Airport</option></select></div>{renderLocationSelect('from_address', 'from_other', 'From address')}{renderLocationSelect('to_address', 'to_other', 'To address')}<div className="col-md-4"><label className="form-label">ID / Booking Reference / Student Roll No.</label><input className="form-control" value={rideForm.roll_number} onChange={(e) => setRideForm({ ...rideForm, roll_number: e.target.value })} required /></div><div className="col-md-4"><label className="form-label">Phone Number</label><input className="form-control" value={rideForm.phone_number} onChange={(e) => setRideForm({ ...rideForm, phone_number: e.target.value })} required /></div><div className="col-md-4"><label className="form-label">Ride Date</label><input type="date" className="form-control" value={rideForm.ride_date} onChange={(e) => setRideForm({ ...rideForm, ride_date: e.target.value })} required /></div><div className="col-12"><button className="btn btn-primary" disabled={isBusy}>{isBusy ? 'Please wait...' : 'Create Ride'}</button></div></form></div>}{(shareTab === 'create' || shareTab === 'status') && <div className="card p-4"><h3>{shareTab === 'status' ? 'Status' : 'Find Rides by Date'}</h3><div className="d-flex gap-2 mb-3"><input type="date" className="form-control w-auto" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} /><button className="btn btn-outline-secondary" onClick={() => selectedDate && loadRidesByDate(selectedDate)}>Find Rides</button></div>{renderRideList(shareTab !== 'status')}</div>}{shareTab === 'chat' && <div className="card p-4"><h3>Get to Know</h3><p className="text-muted">Group chats are separated by ride name, such as sharedride1, sharedride2, and so on.</p><div className="mb-3"><label className="form-label">Choose ride chat</label><select className="form-select" value={chatRideId} onChange={(e) => { const id = Number(e.target.value); setChatRideId(id || ''); if (id) loadChat(id); }}><option value="">Select a ride</option>{rides.map((ride, index) => <option key={ride.id} value={ride.id}>sharedride{index + 1}: {ride.from_address} to {ride.to_address}</option>)}</select><small className="text-muted">Use Find Rides in Status/Create to load ride chats for a date.</small></div><div className="border rounded p-3 mb-3 chat-box">{chatMessages.length === 0 ? <p className="text-muted mb-0">No messages yet.</p> : chatMessages.map((msg) => <div key={msg.id} className="mb-2"><strong>{msg.sender_name}:</strong> {msg.message}<div className="small text-muted">{new Date(msg.created_at).toLocaleString()}</div></div>)}</div><form className="d-flex gap-2" onSubmit={sendChat}><input className="form-control" value={chatText} onChange={(e) => setChatText(e.target.value)} placeholder="Type a message to the ride group" /><button className="btn btn-primary" disabled={!chatRideId}>Send</button></form></div>}</section>;
   }
 
   function renderPage() {

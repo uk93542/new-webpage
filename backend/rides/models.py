@@ -58,6 +58,8 @@ class Ride(models.Model):
     creator_user = models.ForeignKey(User, related_name='created_rides', null=True, blank=True, on_delete=models.SET_NULL)
     creator_name = models.CharField(max_length=100)
     place = models.CharField(max_length=20, choices=PLACE_CHOICES)
+    from_address = models.CharField(max_length=200, default='Surathkal')
+    to_address = models.CharField(max_length=200, default='Surathkal')
     roll_number = models.CharField(max_length=50)
     phone_number = models.CharField(max_length=20)
     ride_date = models.DateField()
@@ -85,3 +87,15 @@ class JoinRequest(models.Model):
 
     def __str__(self) -> str:
         return f'{self.requester_name} -> Ride {self.ride_id} ({self.status})'
+
+class RideChatMessage(models.Model):
+    """Group-chat message scoped to a single ride."""
+
+    ride = models.ForeignKey(Ride, related_name='chat_messages', on_delete=models.CASCADE)
+    sender_user = models.ForeignKey(User, related_name='ride_chat_messages', null=True, blank=True, on_delete=models.SET_NULL)
+    sender_name = models.CharField(max_length=100)
+    message = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self) -> str:
+        return f'Ride {self.ride_id} chat by {self.sender_name}'
