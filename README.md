@@ -102,11 +102,15 @@ For production with MySQL instead, change `USE_MYSQL=false` to `USE_MYSQL=true` 
 
 ### Where to see live backend logs on Render
 
-When someone clicks **Create Ride**, **Find Rides**, **Request to Join**, or **Confirm**, the Django backend now writes helpful log lines to stdout. On Render, open:
+When someone clicks **Register**, **Login**, **Create Ride**, **Find Rides**, **Request to Join**, or **Confirm**, the Django backend writes helpful log lines to stdout. These are **not** in the Render PostgreSQL database logs. PostgreSQL logs only show database connection/authentication/checkpoint messages.
+
+To see Django request errors such as `404`, `500`, missing routes, migration errors, or the `logger.info(...)` messages from this app, open the **backend Web Service** logs:
 
 ```text
-Render Dashboard -> your backend Web Service -> Logs
+Render Dashboard -> your project -> backend Web Service -> Logs
 ```
+
+If you are on a page like the Vercel screenshot, that is the frontend project. Go back to the Render dashboard/project list and open the separate Django/Render backend service, then click **Logs** or **Observability -> Logs** for that backend service.
 
 You should see messages like:
 
@@ -116,6 +120,8 @@ Ride created successfully: ride_id=... ride_date=... phone=...
 Ride search received: ride_date=... path=/api/rides/
 Ride search completed: ride_date=... results=...
 ```
+
+If the logs only show `HEAD /` or `GET /` with status `200`, the backend is healthy but you are only seeing Render/browser health checks. After clicking Register/Login/Create Ride from Vercel, you should also see `POST /api/auth/register/`, `POST /api/auth/login/`, `POST /api/rides/create/`, or similar API paths. If those API paths never appear, redeploy the Vercel frontend after setting `API_BASE_URL` and confirm the frontend environment variable points to this Render URL.
 
 If your Render logs show requests to `/rides/create/` or `/rides/` without `/api`, your Vercel `API_BASE_URL` is missing `/api`. Use either of these values in Vercel:
 

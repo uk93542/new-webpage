@@ -44,6 +44,24 @@ interface Ride {
 
 type Page = 'home' | 'features' | 'about' | 'contact' | 'login' | 'register' | 'dashboard' | 'profile' | 'notifications' | 'share';
 
+const isBrowser = typeof window !== 'undefined';
+const RENDER_API_BASE_URL = 'https://new-webpage-0c7f.onrender.com';
+const HARDCODED_API_BASES = [`${RENDER_API_BASE_URL}/api`, RENDER_API_BASE_URL];
+const CONFIGURED_API_BASE_URL = API_BASE_URL.replace(/\/$/, '');
+const CONFIGURED_API_BASES = CONFIGURED_API_BASE_URL.endsWith('/api')
+  ? [CONFIGURED_API_BASE_URL, CONFIGURED_API_BASE_URL.replace(/\/api$/, '')]
+  : [`${CONFIGURED_API_BASE_URL}/api`, CONFIGURED_API_BASE_URL];
+const isLocalPage = isBrowser && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+const isUsingLocalBackend = CONFIGURED_API_BASE_URL.includes('127.0.0.1') || CONFIGURED_API_BASE_URL.includes('localhost');
+const isUsingExampleBackend = CONFIGURED_API_BASE_URL.includes('api.example.com');
+const shouldPreferHardcodedBackend = isUsingExampleBackend || (isBrowser && !isLocalPage && isUsingLocalBackend);
+const API_BASES = Array.from(new Set(
+  shouldPreferHardcodedBackend
+    ? [...HARDCODED_API_BASES, ...CONFIGURED_API_BASES]
+    : [...CONFIGURED_API_BASES, ...HARDCODED_API_BASES],
+));
+const isProductionApiMisconfigured = isBrowser && !isLocalPage && (isUsingLocalBackend || isUsingExampleBackend);
+
 const VALID_PAGES: Page[] = ['home', 'features', 'about', 'contact', 'login', 'register', 'dashboard', 'profile', 'notifications', 'share'];
 
 function getInitialPage(): Page {
@@ -53,20 +71,13 @@ function getInitialPage(): Page {
   return VALID_PAGES.includes(hashPage) ? hashPage : 'home';
 }
 
-const API_BASE = API_BASE_URL.replace(/\/$/, '').endsWith('/api')
-  ? API_BASE_URL.replace(/\/$/, '')
-  : `${API_BASE_URL.replace(/\/$/, '')}/api`;
-const isBrowser = typeof window !== 'undefined';
-const isLocalPage = isBrowser && ['localhost', '127.0.0.1'].includes(window.location.hostname);
-const isUsingLocalBackend = API_BASE.includes('127.0.0.1') || API_BASE.includes('localhost');
-const isProductionApiMisconfigured = isBrowser && !isLocalPage && isUsingLocalBackend;
 
 async function readErrorMessage(response: Response): Promise<string> {
   try {
     const data = await response.json();
-    return data.error || `Request failed with status ${response.status}.`;
+    return data.error || `Request failed with status ${response.status} at ${response.url}.`;
   } catch {
-    return `Request failed with status ${response.status}. Check Render logs for the exact backend path/error.`;
+    return `Request failed with status ${response.status} at ${response.url}. Check Render web-service logs (not only PostgreSQL logs) for the exact backend path/error.`;
   }
 }
 
@@ -125,19 +136,31 @@ export default function App() {
   }
 
   async function apiFetch(path: string, options: RequestInit = {}) {
-    return fetch(`${API_BASE}${path}`, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...authHeaders(),
-        ...(options.headers as Record<string, string> | undefined),
-      },
-    });
+    const headers = {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+      ...(options.headers as Record<string, string> | undefined),
+    };
+
+    let lastResponse: Response | null = null;
+    let lastNetworkError: unknown = null;
+    for (const baseUrl of API_BASES) {
+      try {
+        const response = await fetch(`${baseUrl}${path}`, { ...options, headers });
+        lastResponse = response;
+        if (response.status !== 404) return response;
+      } catch (error) {
+        lastNetworkError = error;
+      }
+    }
+
+    if (lastResponse) return lastResponse;
+    throw lastNetworkError;
   }
 
   async function loadMe(activeToken = token) {
     if (!activeToken) return;
-    const response = await fetch(`${API_BASE}/auth/me/`, { headers: { Authorization: `Bearer ${activeToken}` } });
+    const response = await apiFetch('/auth/me/', { headers: { Authorization: `Bearer ${activeToken}` } });
     if (response.ok) {
       const data = await response.json();
       setUser(data.user);
@@ -146,7 +169,7 @@ export default function App() {
 
   async function loadNotifications(activeToken = token) {
     if (!activeToken) return;
-    const response = await fetch(`${API_BASE}/notifications/`, { headers: { Authorization: `Bearer ${activeToken}` } });
+    const response = await apiFetch('/notifications/', { headers: { Authorization: `Bearer ${activeToken}` } });
     if (response.ok) {
       const data = await response.json();
       setNotifications(data.notifications || []);
