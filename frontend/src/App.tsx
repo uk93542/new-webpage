@@ -392,6 +392,28 @@ export default function App() {
     if (selectedDate) await loadRidesByDate(selectedDate, { showStatus: false });
   }
 
+  async function loadChat(rideId: number) {
+    const response = await apiFetch(`/rides/${rideId}/chat/`);
+    if (response.ok) {
+      const data = await response.json();
+      setChatMessages(data.messages || []);
+    } else {
+      setMessage(await readErrorMessage(response));
+    }
+  }
+
+  async function sendChat(e: React.FormEvent) {
+    e.preventDefault();
+    if (!chatRideId || !chatText.trim()) return;
+    const response = await apiFetch(`/rides/${chatRideId}/chat/`, { method: 'POST', body: JSON.stringify({ message: chatText }) });
+    if (!response.ok) {
+      setMessage(await readErrorMessage(response));
+      return;
+    }
+    setChatText('');
+    await loadChat(chatRideId);
+  }
+
   function renderNavbar() {
     return (
       <nav className="navbar navbar-expand-lg bg-white border-bottom sticky-top">
@@ -493,6 +515,14 @@ export default function App() {
 
   function selectedRide() {
     return rides.find((ride) => ride.id === selectedRideId) || rides[0];
+  }
+
+  function renderLocationSelect(field: 'from_address' | 'to_address', otherField: 'from_other' | 'to_other', label: string) {
+    return <div className="col-md-4"><label className="form-label">{label}</label><select className="form-select" value={rideForm[field]} onChange={(e) => setRideForm({ ...rideForm, [field]: e.target.value })} required><option value="">Select a Surathkal/Mangalore location</option>{SURATHKAL_LOCATIONS.map((location) => <option key={location} value={location}>{location}</option>)}</select>{rideForm[field] === 'Other' && <input className="form-control mt-2" placeholder={`Enter ${label.toLowerCase()}`} value={rideForm[otherField]} onChange={(e) => setRideForm({ ...rideForm, [otherField]: e.target.value })} required />}</div>;
+  }
+
+  function renderRideList(showActions = true) {
+    return rides.length === 0 ? <p>No rides found for selected date.</p> : <div className="list-group">{rides.map((ride, index) => <div className="list-group-item" key={ride.id}><div className="d-flex justify-content-between flex-wrap gap-2"><div><strong>sharedride{index + 1}: {ride.creator_name}</strong><div>From <strong>{ride.from_address}</strong> to <strong>{ride.to_address}</strong> ({ride.place})</div><div className="small text-muted">ID / Booking Ref: {ride.roll_number} | Phone: {ride.phone_number}</div></div>{showActions && <button className="btn btn-outline-primary btn-sm" disabled={ride.is_creator} onClick={() => requestToJoin(ride)}>{ride.is_creator ? 'Your Ride' : 'Request to Join'}</button>}</div><div className="mt-3"><strong>Status / Join Requests:</strong>{ride.requests.length === 0 ? <p className="small text-muted mb-0">No requests yet. Approvers see requester profile names here until action is taken.</p> : <ul className="mt-2 mb-0">{ride.requests.map((request) => <li key={request.id}>{request.requester_name} ({request.requester_phone}) - <span className={`badge ${request.status === 'accepted' ? 'text-bg-success' : request.status === 'rejected' ? 'text-bg-danger' : 'text-bg-warning'}`}>{request.status}</span>{request.status === 'pending' && ride.is_creator && !request.is_mine && <><button className="btn btn-success btn-sm ms-2" onClick={() => updateRequestStatus(ride, request, 'confirm')}>Approve</button><button className="btn btn-outline-danger btn-sm ms-2" onClick={() => updateRequestStatus(ride, request, 'reject')}>Deny</button></>}</li>)}</ul>}</div></div>)}</div>;
   }
 
   function renderShareRide() {
