@@ -1,7 +1,7 @@
 import json
 import logging
 import secrets
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
@@ -11,7 +11,7 @@ from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
-from .models import JoinRequest, Notification, Ride, RideChatMessage, RideRemovalVote, SessionToken, UserProfile
+from .models import JoinRequest, Notification, Ride, RideChatMessage, SessionToken, UserProfile
 from .services import notify_all_registered_for_date, send_confirmation_notifications
 
 logger = logging.getLogger(__name__)
@@ -62,9 +62,6 @@ def _serialize_user(user: User) -> dict:
         'address': profile.address if profile else '',
         'gov_id_type': profile.gov_id_type if profile else '',
         'gov_id_number': profile.gov_id_number if profile else '',
-        'gender': profile.gender if profile else '',
-        'id_document': profile.id_document if profile else '',
-        'profile_complete': bool(profile and profile.gender),
     }
 
 
@@ -84,54 +81,24 @@ def _serialize_request(req: JoinRequest, current_user: User | None = None) -> di
         'requester_user_id': req.requester_user_id,
         'requester_name': req.requester_name,
         'requester_phone': req.requester_phone,
-        'requester_gender': req.requester_user.profile.gender if req.requester_user and hasattr(req.requester_user, 'profile') else '',
-        'requester_id_document': req.requester_user.profile.id_document if req.requester_user and hasattr(req.requester_user, 'profile') else '',
         'status': req.status,
         'is_mine': bool(current_user and req.requester_user_id == current_user.id),
     }
 
 
-def _ride_members(ride: Ride) -> list[User]:
-    members = []
-    if ride.creator_user:
-        members.append(ride.creator_user)
-    for req in ride.requests.filter(status='accepted').select_related('requester_user'):
-        if req.requester_user and req.requester_user not in members:
-            members.append(req.requester_user)
-    return members
-
-def _serialize_member(user: User, ride: Ride, current_user: User | None = None) -> dict:
-    profile = getattr(user, 'profile', None)
-    vote_count = ride.removal_votes.filter(target_user=user).count()
-    return {
-        'id': user.id,
-        'name': user.get_full_name() or user.email,
-        'email': user.email,
-        'gender': profile.gender if profile else '',
-        'id_document': profile.id_document if profile else '',
-        'is_approver': ride.approver_user_id == user.id,
-        'is_me': bool(current_user and current_user.id == user.id),
-        'removal_vote_count': vote_count,
-    }
-
 def _serialize_ride(ride: Ride, current_user: User | None = None) -> dict:
     is_creator = bool(current_user and ride.creator_user_id == current_user.id)
-    is_approver = bool(current_user and ride.approver_user_id == current_user.id)
     return {
         'id': ride.id,
         'creator_user_id': ride.creator_user_id,
         'creator_name': ride.creator_name,
-        'approver_user_id': ride.approver_user_id,
         'place': ride.place,
         'from_address': ride.from_address,
         'to_address': ride.to_address,
         'roll_number': ride.roll_number,
         'phone_number': ride.phone_number,
         'ride_date': str(ride.ride_date),
-        'ride_time': ride.ride_time.strftime('%H:%M'),
         'is_creator': is_creator,
-        'is_approver': is_approver,
-        'members': [_serialize_member(member, ride, current_user) for member in _ride_members(ride)],
         'requests': [_serialize_request(req, current_user) for req in ride.requests.all().order_by('-created_at')],
     }
 
@@ -141,7 +108,7 @@ def _serialize_ride(ride: Ride, current_user: User | None = None) -> dict:
 def register(request: HttpRequest) -> JsonResponse:
     try:
         payload = _payload(request)
-        required_fields = ['first_name', 'last_name', 'email', 'address', 'gender', 'gov_id_type', 'gov_id_number', 'password']
+        required_fields = ['first_name', 'last_name', 'email', 'address', 'gov_id_type', 'gov_id_number', 'password']
         missing = [field for field in required_fields if not payload.get(field)]
         if missing:
             return JsonResponse({'error': f'Missing field(s): {", ".join(missing)}'}, status=400)
@@ -157,8 +124,6 @@ def register(request: HttpRequest) -> JsonResponse:
         UserProfile.objects.create(
             user=user,
             address=payload['address'],
-            gender=payload['gender'],
-            id_document=payload.get('id_document', ''),
             gov_id_type=payload['gov_id_type'],
             gov_id_number=payload['gov_id_number'],
         )
@@ -201,39 +166,19 @@ def me(request: HttpRequest) -> JsonResponse:
     return JsonResponse({'user': _serialize_user(user)})
 
 
-@csrf_exempt
-def update_profile(request: HttpRequest) -> JsonResponse:
-    user, error = _require_user(request)
-    if error:
-        return error
-    if request.method != 'POST':
-        return JsonResponse({'error': 'Use POST to update profile.'}, status=405)
-    payload = _payload(request)
-    profile = user.profile
-    if 'gender' in payload:
-        profile.gender = payload['gender']
-    if 'id_document' in payload:
-        profile.id_document = payload['id_document']
-    profile.save(update_fields=['gender', 'id_document'])
-    return JsonResponse({'user': _serialize_user(user)})
-
-
 @require_GET
 def list_notifications(request: HttpRequest) -> JsonResponse:
     user, error = _require_user(request)
     if error:
         return error
     notifications = user.ride_notifications.order_by('-created_at')[:25]
-    unread_count = user.ride_notifications.filter(is_read=False).count()
-    return JsonResponse({'notifications': [_serialize_notification(item) for item in notifications], 'unread_count': unread_count})
+    return JsonResponse({'notifications': [_serialize_notification(item) for item in notifications]})
 
 
 @require_GET
 def list_rides(request: HttpRequest) -> JsonResponse:
     user = _current_user(request)
     ride_date = request.GET.get('ride_date')
-    ride_time = request.GET.get('ride_time')
-    buffer_minutes = int(request.GET.get('buffer_minutes') or 0)
     logger.info('Ride search received: user=%s ride_date=%s path=%s', user.email if user else 'anonymous', ride_date or 'all', request.path)
     queryset = Ride.objects.all().prefetch_related('requests').order_by('ride_date', '-created_at')
 
@@ -241,11 +186,6 @@ def list_rides(request: HttpRequest) -> JsonResponse:
         try:
             parsed_date = _parse_date(ride_date)
             queryset = queryset.filter(ride_date=parsed_date)
-            if ride_time and buffer_minutes:
-                center = datetime.strptime(ride_time, '%H:%M')
-                start = (center - timedelta(minutes=buffer_minutes)).time()
-                end = (center + timedelta(minutes=buffer_minutes)).time()
-                queryset = queryset.filter(ride_time__gte=start, ride_time__lte=end)
         except ValueError as exc:
             return JsonResponse({'error': str(exc)}, status=400)
 
@@ -264,29 +204,25 @@ def create_ride(request: HttpRequest) -> JsonResponse:
     try:
         payload = _payload(request)
         logger.info(
-            'Create ride request received: user=%s roll=%s phone=%s ride_date=%s path=%s',
+            'Create ride request received: user=%s place=%s roll=%s phone=%s ride_date=%s path=%s',
             user.email,
+            payload.get('place'),
             payload.get('roll_number'),
             payload.get('phone_number'),
             payload.get('ride_date'),
             request.path,
         )
         ride_date = _parse_date(payload['ride_date'])
-        ride_time = datetime.strptime(payload['ride_time'], '%H:%M').time()
-        if datetime.combine(ride_date, ride_time) <= datetime.now():
-            return JsonResponse({'error': 'Ride date and time must be in the future.'}, status=400)
 
         ride = Ride.objects.create(
             creator_user=user,
             creator_name=user.get_full_name() or user.email,
-            place='station',
-            approver_user=user,
+            place=payload['place'],
             from_address=payload['from_address'].strip(),
             to_address=payload['to_address'].strip(),
             roll_number=payload['roll_number'],
             phone_number=payload['phone_number'],
             ride_date=ride_date,
-            ride_time=ride_time,
         )
     except KeyError as exc:
         return JsonResponse({'error': f'Missing field: {exc.args[0]}'}, status=400)
@@ -330,7 +266,7 @@ def create_join_request(request: HttpRequest, ride_id: int) -> JsonResponse:
             Notification.objects.create(
                 user=ride.creator_user,
                 title='Someone new joined your ride requests',
-                message=f'{join_request.requester_name} requested to join your ride from {ride.from_address} to {ride.to_address} on {ride.ride_date}.',
+                message=f'{join_request.requester_name} requested to join your {ride.place} ride from {ride.from_address} to {ride.to_address} on {ride.ride_date}.',
             )
     except KeyError as exc:
         return JsonResponse({'error': f'Missing field: {exc.args[0]}'}, status=400)
@@ -351,8 +287,8 @@ def confirm_join_request(request: HttpRequest, ride_id: int, request_id: int) ->
     ride = get_object_or_404(Ride, id=ride_id)
     join_request = get_object_or_404(JoinRequest, id=request_id, ride=ride)
 
-    if ride.approver_user_id != user.id:
-        return JsonResponse({'error': 'Only the current ride approver can approve requests for this ride.'}, status=403)
+    if ride.creator_user_id != user.id:
+        return JsonResponse({'error': 'Only the ride creator can approve requests for this ride.'}, status=403)
     if join_request.requester_user_id == user.id:
         return JsonResponse({'error': 'You cannot approve your own request.'}, status=403)
 
@@ -372,7 +308,7 @@ def confirm_join_request(request: HttpRequest, ride_id: int, request_id: int) ->
         Notification.objects.create(
             user=join_request.requester_user,
             title='Ride request accepted',
-            message=f'Your request to join {ride.creator_name}\'s ride from {ride.from_address} to {ride.to_address} on {ride.ride_date} was accepted.',
+            message=f'Your request to join {ride.creator_name}\'s {ride.place} ride from {ride.from_address} to {ride.to_address} on {ride.ride_date} was accepted.',
         )
 
     same_day_rides = Ride.objects.filter(ride_date=ride.ride_date).prefetch_related('requests')
@@ -398,8 +334,8 @@ def reject_join_request(request: HttpRequest, ride_id: int, request_id: int) -> 
     ride = get_object_or_404(Ride, id=ride_id)
     join_request = get_object_or_404(JoinRequest, id=request_id, ride=ride)
 
-    if ride.approver_user_id != user.id:
-        return JsonResponse({'error': 'Only the current ride approver can deny requests for this ride.'}, status=403)
+    if ride.creator_user_id != user.id:
+        return JsonResponse({'error': 'Only the ride creator can deny requests for this ride.'}, status=403)
 
     join_request.status = 'rejected'
     join_request.save(update_fields=['status'])
@@ -454,79 +390,3 @@ def ride_chat(request: HttpRequest, ride_id: int) -> JsonResponse:
 
     messages = ride.chat_messages.order_by('created_at')[:100]
     return JsonResponse({'messages': [_serialize_chat_message(message) for message in messages]})
-
-
-@csrf_exempt
-@require_POST
-def mark_notification_read(request: HttpRequest, notification_id: int) -> JsonResponse:
-    user, error = _require_user(request)
-    if error:
-        return error
-    notification = get_object_or_404(Notification, id=notification_id, user=user)
-    notification.is_read = True
-    notification.save(update_fields=['is_read'])
-    return JsonResponse({'notification': _serialize_notification(notification), 'unread_count': user.ride_notifications.filter(is_read=False).count()})
-
-
-def _ensure_ride_member(ride: Ride, user: User) -> bool:
-    return ride.creator_user_id == user.id or JoinRequest.objects.filter(ride=ride, requester_user=user, status='accepted').exists()
-
-
-def _promote_next_approver(ride: Ride) -> None:
-    accepted = JoinRequest.objects.filter(ride=ride, status='accepted', requester_user__isnull=False).order_by('created_at').select_related('requester_user')
-    next_request = accepted.first()
-    ride.approver_user = next_request.requester_user if next_request else ride.creator_user
-    ride.save(update_fields=['approver_user'])
-
-
-@csrf_exempt
-@require_POST
-def leave_ride(request: HttpRequest, ride_id: int) -> JsonResponse:
-    user, error = _require_user(request)
-    if error:
-        return error
-    ride = get_object_or_404(Ride, id=ride_id)
-    if ride.creator_user_id == user.id:
-        ride.creator_user = None
-        if ride.approver_user_id == user.id:
-            _promote_next_approver(ride)
-        else:
-            ride.save(update_fields=['creator_user'])
-    else:
-        req = JoinRequest.objects.filter(ride=ride, requester_user=user, status='accepted').first()
-        if not req:
-            return JsonResponse({'error': 'You are not an accepted member of this ride.'}, status=400)
-        req.status = 'rejected'
-        req.save(update_fields=['status'])
-        if ride.approver_user_id == user.id:
-            _promote_next_approver(ride)
-    if ride.approver_user:
-        Notification.objects.create(user=ride.approver_user, title='Someone left the ride', message=f'{user.get_full_name() or user.email} left the ride on {ride.ride_date}.')
-    return JsonResponse({'ride': _serialize_ride(ride, user)})
-
-
-@csrf_exempt
-@require_POST
-def vote_remove_member(request: HttpRequest, ride_id: int, user_id: int) -> JsonResponse:
-    user, error = _require_user(request)
-    if error:
-        return error
-    ride = get_object_or_404(Ride, id=ride_id)
-    target = get_object_or_404(User, id=user_id)
-    if target.id == user.id:
-        return JsonResponse({'error': 'You cannot vote to remove yourself.'}, status=400)
-    if not _ensure_ride_member(ride, user) or not _ensure_ride_member(ride, target):
-        return JsonResponse({'error': 'Only shared ride members can vote.'}, status=403)
-    RideRemovalVote.objects.get_or_create(ride=ride, voter_user=user, target_user=target)
-    total_members = len(_ride_members(ride))
-    votes = ride.removal_votes.filter(target_user=target).count()
-    removed = votes > total_members / 2
-    if removed:
-        if ride.creator_user_id == target.id:
-            ride.creator_user = None
-            ride.save(update_fields=['creator_user'])
-        JoinRequest.objects.filter(ride=ride, requester_user=target).update(status='rejected')
-        if ride.approver_user_id == target.id:
-            _promote_next_approver(ride)
-        Notification.objects.create(user=target, title='Removed from ride', message=f'Ride members voted to remove you from the ride on {ride.ride_date}.')
-    return JsonResponse({'ride': _serialize_ride(ride, user), 'removed': removed, 'votes': votes, 'total_members': total_members})
