@@ -361,7 +361,6 @@ export default function App() {
     await loadChat(rideId);
   }
 
-
   async function markNotificationRead(notificationId: number) {
     const response = await apiFetch(`/notifications/${notificationId}/read/`, { method: 'POST' });
     if (response.ok) await loadNotifications();
@@ -390,28 +389,6 @@ export default function App() {
     const data = await response.json();
     setMessage(data.removed ? `${member.name} was removed by majority vote.` : `Vote recorded (${data.votes}/${data.total_members}).`);
     if (selectedDate) await loadRidesByDate(selectedDate, { showStatus: false });
-  }
-
-  async function loadChat(rideId: number) {
-    const response = await apiFetch(`/rides/${rideId}/chat/`);
-    if (response.ok) {
-      const data = await response.json();
-      setChatMessages(data.messages || []);
-    } else {
-      setMessage(await readErrorMessage(response));
-    }
-  }
-
-  async function sendChat(e: React.FormEvent) {
-    e.preventDefault();
-    if (!chatRideId || !chatText.trim()) return;
-    const response = await apiFetch(`/rides/${chatRideId}/chat/`, { method: 'POST', body: JSON.stringify({ message: chatText }) });
-    if (!response.ok) {
-      setMessage(await readErrorMessage(response));
-      return;
-    }
-    setChatText('');
-    await loadChat(chatRideId);
   }
 
   function renderNavbar() {
@@ -459,7 +436,6 @@ export default function App() {
     );
   }
 
-
   function renderFeatures() {
     return (
       <section className="my-4">
@@ -477,11 +453,9 @@ export default function App() {
     return <section className="auth-card card p-4 my-4"><h2>Login</h2><form onSubmit={handleLogin} className="row g-3"><div className="col-md-4"><label className="form-label">Email</label><input className="form-control" type="email" value={loginForm.email} onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })} required /></div><div className="col-md-4"><label className="form-label">Password</label><input className="form-control" type="password" value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} required /></div><div className="col-md-4"><label className="form-label">Gov/College ID upload (optional)</label><input className="form-control" type="file" onChange={(e) => setLoginForm({ ...loginForm, id_document: e.target.files?.[0]?.name || '' })} /></div><div><button className="btn btn-primary" disabled={isBusy}>{isBusy ? 'Please wait...' : 'Login'}</button><button type="button" className="btn btn-link" onClick={() => navigate('register')}>Need an account? Register</button></div></form></section>;
   }
 
-
   function renderRegister() {
     return <section className="auth-card card p-4 my-4"><h2>Create your account</h2><form onSubmit={handleRegister} className="row g-3"><div className="col-12"><h4>1. General details</h4></div><div className="col-md-4"><label className="form-label">First Name</label><input className="form-control" value={registerForm.first_name} onChange={(e) => setRegisterForm({ ...registerForm, first_name: e.target.value })} required /></div><div className="col-md-4"><label className="form-label">Last Name</label><input className="form-control" value={registerForm.last_name} onChange={(e) => setRegisterForm({ ...registerForm, last_name: e.target.value })} required /></div><div className="col-md-4"><label className="form-label">Mail ID</label><input className="form-control" type="email" value={registerForm.email} onChange={(e) => setRegisterForm({ ...registerForm, email: e.target.value })} required /></div><div className="col-12"><hr /><h4>2. Detailed profile</h4></div><div className="col-md-4"><label className="form-label">Gender</label><select className="form-select" value={registerForm.gender} onChange={(e) => setRegisterForm({ ...registerForm, gender: e.target.value })} required><option value="">Select</option><option value="male">Male</option><option value="female">Female</option></select></div><div className="col-md-4"><label className="form-label">Address</label><input className="form-control" value={registerForm.address} onChange={(e) => setRegisterForm({ ...registerForm, address: e.target.value })} required /></div><div className="col-md-4"><label className="form-label">Gov/College ID upload</label><input className="form-control" type="file" onChange={(e) => setRegisterForm({ ...registerForm, id_document: e.target.files?.[0]?.name || '' })} /></div><div className="col-md-6"><label className="form-label">Gov ID Type</label><select className="form-select" value={registerForm.gov_id_type} onChange={(e) => setRegisterForm({ ...registerForm, gov_id_type: e.target.value })}><option value="aadhaar">Aadhaar</option><option value="passport">Passport</option><option value="driving_license">Driving License</option><option value="voter_id">Voter ID</option><option value="other">Other</option></select></div><div className="col-md-6"><label className="form-label">Gov ID Number</label><input className="form-control" value={registerForm.gov_id_number} onChange={(e) => setRegisterForm({ ...registerForm, gov_id_number: e.target.value })} required /></div><div className="col-12"><hr /><h4>3. Password setup</h4></div><div className="col-md-6"><label className="form-label">Create Password</label><input className="form-control" type="password" value={registerForm.password} onChange={(e) => setRegisterForm({ ...registerForm, password: e.target.value })} required /></div><div className="col-md-6"><label className="form-label">Confirm Password</label><input className="form-control" type="password" value={registerForm.confirm_password} onChange={(e) => setRegisterForm({ ...registerForm, confirm_password: e.target.value })} required /></div><div><button className="btn btn-primary" disabled={isBusy}>{isBusy ? 'Please wait...' : 'Register'}</button></div></form></section>;
   }
-
 
   function renderDashboard() {
     if (!user) return renderLogin();
@@ -493,13 +467,11 @@ export default function App() {
     return <section className="card p-4 my-4"><h2>Profile</h2>{!user.profile_complete && <div className="alert alert-warning">Please update your gender to complete your profile.</div>}<p><strong>Name:</strong> {user.name}</p><p><strong>Email:</strong> {user.email}</p><form className="row g-3" onSubmit={updateProfile}><div className="col-md-4"><label className="form-label">Gender</label><select className="form-select" value={user.gender} onChange={(e) => setUser({ ...user, gender: e.target.value })} required><option value="">Select</option><option value="male">Male</option><option value="female">Female</option></select></div><div className="col-md-4"><label className="form-label">Gov/College ID document</label><input className="form-control" value={user.id_document} onChange={(e) => setUser({ ...user, id_document: e.target.value })} placeholder="Uploaded file name or link" /></div><div className="col-12"><button className="btn btn-primary">Update Profile</button></div></form><hr /><p><strong>Address:</strong> {user.address}</p><p><strong>Gov ID:</strong> {user.gov_id_type} - {user.gov_id_number}</p></section>;
   }
 
-
   function renderNotifications() {
     if (!user) return renderLogin();
     const unread = notifications.filter((item) => !item.is_read).length;
     return <section className="card p-4 my-4"><h2>Notifications</h2><p>{unread} new notification(s).</p>{notifications.length === 0 ? <p>No notifications yet.</p> : <ul className="list-group">{notifications.map((item) => <li className={`list-group-item ${item.is_read ? '' : 'list-group-item-info'}`} key={item.id}><strong>{item.title}</strong><p className="mb-1">{item.message}</p><small>{new Date(item.created_at).toLocaleString()}</small>{!item.is_read && <button className="btn btn-sm btn-outline-primary ms-3" onClick={() => markNotificationRead(item.id)}>Mark as read</button>}</li>)}</ul>}</section>;
   }
-
 
   function renderLocationSelect(field: 'from_address' | 'to_address', otherField: 'from_other' | 'to_other', label: string) {
     return <div className="col-md-4"><label className="form-label">{label}</label><select className="form-select" value={rideForm[field]} onChange={(e) => setRideForm({ ...rideForm, [field]: e.target.value })} required><option value="">Select a Surathkal/Mangalore location</option>{SURATHKAL_LOCATIONS.map((location) => <option key={location} value={location}>{location}</option>)}</select>{rideForm[field] === 'Other' && <input className="form-control mt-2" placeholder={`Enter ${label.toLowerCase()}`} value={rideForm[otherField]} onChange={(e) => setRideForm({ ...rideForm, [otherField]: e.target.value })} required />}</div>;
@@ -517,20 +489,11 @@ export default function App() {
     return rides.find((ride) => ride.id === selectedRideId) || rides[0];
   }
 
-  function renderLocationSelect(field: 'from_address' | 'to_address', otherField: 'from_other' | 'to_other', label: string) {
-    return <div className="col-md-4"><label className="form-label">{label}</label><select className="form-select" value={rideForm[field]} onChange={(e) => setRideForm({ ...rideForm, [field]: e.target.value })} required><option value="">Select a Surathkal/Mangalore location</option>{SURATHKAL_LOCATIONS.map((location) => <option key={location} value={location}>{location}</option>)}</select>{rideForm[field] === 'Other' && <input className="form-control mt-2" placeholder={`Enter ${label.toLowerCase()}`} value={rideForm[otherField]} onChange={(e) => setRideForm({ ...rideForm, [otherField]: e.target.value })} required />}</div>;
-  }
-
-  function renderRideList(showActions = true) {
-    return rides.length === 0 ? <p>No rides found for selected date.</p> : <div className="list-group">{rides.map((ride, index) => <div className="list-group-item" key={ride.id}><div className="d-flex justify-content-between flex-wrap gap-2"><div><strong>sharedride{index + 1}: {ride.creator_name}</strong><div>From <strong>{ride.from_address}</strong> to <strong>{ride.to_address}</strong> ({ride.place})</div><div className="small text-muted">ID / Booking Ref: {ride.roll_number} | Phone: {ride.phone_number}</div></div>{showActions && <button className="btn btn-outline-primary btn-sm" disabled={ride.is_creator} onClick={() => requestToJoin(ride)}>{ride.is_creator ? 'Your Ride' : 'Request to Join'}</button>}</div><div className="mt-3"><strong>Status / Join Requests:</strong>{ride.requests.length === 0 ? <p className="small text-muted mb-0">No requests yet. Approvers see requester profile names here until action is taken.</p> : <ul className="mt-2 mb-0">{ride.requests.map((request) => <li key={request.id}>{request.requester_name} ({request.requester_phone}) - <span className={`badge ${request.status === 'accepted' ? 'text-bg-success' : request.status === 'rejected' ? 'text-bg-danger' : 'text-bg-warning'}`}>{request.status}</span>{request.status === 'pending' && ride.is_creator && !request.is_mine && <><button className="btn btn-success btn-sm ms-2" onClick={() => updateRequestStatus(ride, request, 'confirm')}>Approve</button><button className="btn btn-outline-danger btn-sm ms-2" onClick={() => updateRequestStatus(ride, request, 'reject')}>Deny</button></>}</li>)}</ul>}</div></div>)}</div>;
-  }
-
   function renderShareRide() {
     if (!user) return renderLogin();
     const activeRide = selectedRide();
     return <section className="my-4 module-shell"><h2>Share My Ride</h2><div className="btn-group flex-wrap mb-3"><button className={`btn ${shareTab === 'create' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => setShareTab('create')}>Create a Ride</button><button className={`btn ${shareTab === 'find' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => setShareTab('find')}>Find Rides</button><button className={`btn ${shareTab === 'status' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => setShareTab('status')}>Status</button><button className={`btn ${shareTab === 'chat' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => setShareTab('chat')}>Get to Know</button></div>{shareTab !== 'create' && <div className="card p-3 mb-3"><label className="form-label">Ride selection</label><select className="form-select" value={selectedRideId} onChange={(e) => setSelectedRideId(Number(e.target.value) || '')}><option value="">Select a ride</option>{rides.map((ride, index) => <option key={ride.id} value={ride.id}>{rideLabel(ride, index)} • {ride.from_address} to {ride.to_address}</option>)}</select></div>}{shareTab === 'create' && <div className="card p-4 mb-4"><h3>Create a Ride</h3><form className="row g-3" onSubmit={createRide}>{renderLocationSelect('from_address', 'from_other', 'From address')}{renderLocationSelect('to_address', 'to_other', 'To address')}<div className="col-md-4"><label className="form-label">ID / Booking Reference / Student Roll No.</label><input className="form-control" value={rideForm.roll_number} onChange={(e) => setRideForm({ ...rideForm, roll_number: e.target.value })} required /></div><div className="col-md-4"><label className="form-label">Phone Number</label><input className="form-control" value={rideForm.phone_number} onChange={(e) => setRideForm({ ...rideForm, phone_number: e.target.value })} required /></div><div className="col-md-4"><label className="form-label">Ride Date</label><input type="date" min={new Date().toISOString().slice(0, 10)} className="form-control" value={rideForm.ride_date} onChange={(e) => setRideForm({ ...rideForm, ride_date: e.target.value })} required /></div><div className="col-md-4"><label className="form-label">Ride Time</label><input type="time" className="form-control" value={rideForm.ride_time} onChange={(e) => setRideForm({ ...rideForm, ride_time: e.target.value })} required /></div><div className="col-12"><button className="btn btn-primary" disabled={isBusy}>{isBusy ? 'Please wait...' : 'Create Ride'}</button></div></form></div>}{shareTab === 'find' && <div className="card p-4"><h3>Find Rides</h3><div className="row g-3 mb-3"><div className="col-md-4"><label className="form-label">Date</label><input type="date" className="form-control" value={findForm.ride_date} onChange={(e) => setFindForm({ ...findForm, ride_date: e.target.value })} /></div><div className="col-md-4"><label className="form-label">Time (optional)</label><input type="time" className="form-control" value={findForm.ride_time} onChange={(e) => setFindForm({ ...findForm, ride_time: e.target.value })} /></div><div className="col-md-4"><label className="form-label">Buffer minutes (optional)</label><input className="form-control" type="number" min="0" value={findForm.buffer_minutes} onChange={(e) => setFindForm({ ...findForm, buffer_minutes: e.target.value })} /></div><div className="col-12"><button className="btn btn-outline-secondary" onClick={() => { setSelectedDate(findForm.ride_date); findForm.ride_date && loadRidesByDate(findForm.ride_date, undefined, findForm.ride_time, findForm.buffer_minutes); }}>Find Rides</button></div></div>{renderRideList(true)}</div>}{shareTab === 'status' && <div className="card p-4"><h3>Status</h3>{!activeRide ? <p>Load or select a ride first.</p> : <><h4>{activeRide.from_address} to {activeRide.to_address} on {activeRide.ride_date} at {activeRide.ride_time}</h4>{renderRideList(false)}<h5 className="mt-3">Members</h5><ul className="list-group">{activeRide.members.map((member) => <li className="list-group-item d-flex justify-content-between align-items-center" key={member.id}><span>{member.name} {member.is_approver && <span className="badge text-bg-primary ms-2">Approver</span>}<br /><small>{member.gender} • ID: {member.id_document || 'Not uploaded'} • removal votes: {member.removal_vote_count}</small></span><span>{member.is_me ? <button className="btn btn-outline-danger btn-sm" onClick={() => leaveRide(activeRide)}>Leave ride</button> : <button className="btn btn-outline-warning btn-sm" onClick={() => voteRemove(activeRide, member)}>Vote remove</button>}</span></li>)}</ul></>}</div>}{shareTab === 'chat' && <div className="card p-4"><h3>Get to Know</h3>{!activeRide ? <p>Load or select a ride first.</p> : <><p className="text-muted">Chat for {activeRide.from_address} to {activeRide.to_address} ({activeRide.ride_date} {activeRide.ride_time}).</p><button className="btn btn-outline-secondary btn-sm mb-2" onClick={() => loadChat(activeRide.id)}>Load Chat</button><div className="border rounded p-3 mb-3 chat-box">{chatMessages.length === 0 ? <p className="text-muted mb-0">No messages yet.</p> : chatMessages.map((msg) => <div key={msg.id} className="mb-2"><strong>{msg.sender_name}:</strong> {msg.message}<div className="small text-muted">{new Date(msg.created_at).toLocaleString()}</div></div>)}</div><form className="d-flex gap-2" onSubmit={(e) => sendChat(e, activeRide.id)}><input className="form-control" value={chatText} onChange={(e) => setChatText(e.target.value)} placeholder="Type a message to the ride group" /><button className="btn btn-primary">Send</button></form></>}</div>}</section>;
   }
-
 
   function renderPage() {
     if (page === 'login') return renderLogin();
