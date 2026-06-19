@@ -1,13 +1,43 @@
-// Basic Sass styling on top of Bootstrap.
 $body-bg: #f5f7fb;
 $card-border-radius: 1rem;
+$primary: #2454d6;
 
 body {
-  background: $body-bg;
+  background: linear-gradient(180deg, #eef4ff 0%, $body-bg 16rem);
+  color: #172033;
 }
 
-h1 {
+h1,
+h2,
+h3,
+h4 {
   font-weight: 700;
+}
+
+.navbar {
+  box-shadow: 0 0.5rem 1.5rem rgba(15, 23, 42, 0.06);
+}
+
+.card,
+.auth-card,
+.module-shell .list-group-item {
+  border: 0;
+  border-radius: $card-border-radius;
+  box-shadow: 0 0.75rem 2rem rgba(15, 23, 42, 0.08);
+}
+
+.btn {
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.form-control,
+.form-select {
+  border-radius: 0.8rem;
+}
+
+.module-shell .btn-group .btn {
+  margin-bottom: 0.5rem;
 }
 
 .chat-box {
