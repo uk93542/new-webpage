@@ -13,7 +13,11 @@ class UserProfile(models.Model):
         ('other', 'Other'),
     ]
 
+    GENDER_CHOICES = [('male', 'Male'), ('female', 'Female')]
+
     user = models.OneToOneField(User, related_name='profile', on_delete=models.CASCADE)
+    gender = models.CharField(max_length=10, choices=GENDER_CHOICES, blank=True, default='')
+    id_document = models.TextField(blank=True, default='')
     address = models.TextField()
     gov_id_type = models.CharField(max_length=40, choices=GOV_ID_CHOICES)
     gov_id_number = models.CharField(max_length=80)
@@ -56,13 +60,15 @@ class Ride(models.Model):
     ]
 
     creator_user = models.ForeignKey(User, related_name='created_rides', null=True, blank=True, on_delete=models.SET_NULL)
+    approver_user = models.ForeignKey(User, related_name='approving_rides', null=True, blank=True, on_delete=models.SET_NULL)
     creator_name = models.CharField(max_length=100)
-    place = models.CharField(max_length=20, choices=PLACE_CHOICES)
+    place = models.CharField(max_length=20, choices=PLACE_CHOICES, default='station')
     from_address = models.CharField(max_length=200, default='Surathkal')
     to_address = models.CharField(max_length=200, default='Surathkal')
     roll_number = models.CharField(max_length=50)
     phone_number = models.CharField(max_length=20)
     ride_date = models.DateField()
+    ride_time = models.TimeField(default='09:00')
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self) -> str:
@@ -99,3 +105,18 @@ class RideChatMessage(models.Model):
 
     def __str__(self) -> str:
         return f'Ride {self.ride_id} chat by {self.sender_name}'
+
+
+class RideRemovalVote(models.Model):
+    """A vote by one ride member to remove another ride member."""
+
+    ride = models.ForeignKey(Ride, related_name='removal_votes', on_delete=models.CASCADE)
+    voter_user = models.ForeignKey(User, related_name='removal_votes_cast', on_delete=models.CASCADE)
+    target_user = models.ForeignKey(User, related_name='removal_votes_received', on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('ride', 'voter_user', 'target_user')
+
+    def __str__(self) -> str:
+        return f'{self.voter_user_id} voted to remove {self.target_user_id} from ride {self.ride_id}'
